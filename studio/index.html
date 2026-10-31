@@ -1,0 +1,125 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>pc-studio · 预测编码图编辑器</title>
+<!-- 开发入口：用 http 打开（python3 -m http.server），双击打开请用根目录的 pc-studio.html -->
+<link rel="stylesheet" href="./styles/index.css">
+</head>
+<body>
+  <div id="top">
+    <div class="brand">pc<b>-studio</b></div>
+    <span class="sep"></span>
+    <div class="menu-btn">
+      <span class="pill" id="btn-file">文件 ▾</span>
+      <div class="menu" id="filemenu">
+        <div class="mi" data-act="new">新建图纸<span class="k">⌘N</span></div>
+        <div class="mi" data-act="save">保存<span class="k">⌘S</span></div>
+        <div class="mi" data-act="saveas">另存为…</div>
+        <div class="mi" data-act="open">加载图纸…<span class="k">⌘O</span></div>
+        <div class="msep"></div>
+        <div class="mhd">示例图纸</div>
+        <div class="mi" data-act="ex0">两层（M[0] ↔ M[1]）</div>
+        <div class="mi" data-act="ex1">三层（EM 串联）</div>
+        <div class="mi" data-act="ex2">只有输入层（退化）</div>
+        <div class="msep"></div>
+        <div class="mi" data-act="json">导出 JSON…</div>
+        <div class="mi" data-act="cpp">导出 C++ 代码…</div>
+      </div>
+    </div>
+    <span class="sep"></span>
+    <div class="menu-btn">
+      <span class="pill" id="btn-tool">工具 ▾</span>
+      <div class="menu" id="toolmenu">
+        <div class="mi" data-mode="select"><span>选择</span><span class="k">V</span></div>
+        <div class="mi" data-mode="scissor"><span>剪刀</span><span class="k">S</span></div>
+      </div>
+    </div>
+    <span class="pill" id="btn-layout">整理布局</span>
+    <span class="pill" id="btn-help">帮助</span>
+    <span class="pill" id="btn-json" hidden>导出 JSON</span>
+    <span class="pill" id="btn-cpp" hidden>导出 C++</span>
+    <div id="toggles">
+      <span class="tg" id="btn-left" title="显示/隐藏左栏">◧ 左栏</span>
+      <span class="tg" id="btn-right" title="显示/隐藏右栏">右栏 ◨</span>
+    </div>
+    <div id="stat">
+      <span class="badge" id="b-ops">ops —</span>
+      <span class="badge" id="b-arena">arena —</span>
+      <span class="badge" id="b-check">校验 —</span>
+    </div>
+  </div>
+
+  <div id="main">
+    <div id="left">
+      <div class="sec-head open" id="lc-head">组件<span class="car">▶</span></div>
+      <div id="lc-body" class="open"></div>
+      <div class="sec-head" id="ls-head">设置<span class="car">▶</span></div>
+    </div>
+    <div id="stage">
+      <div id="world">
+        <svg id="wires"></svg>
+        <div id="nodes"></div>
+      </div>
+      <div id="setpop">
+        <div class="hd"><b>设置</b><span class="x" id="set-close">✕</span></div>
+        <div class="bd" id="set-body"></div>
+      </div>
+      <div id="marquee"></div>
+      <div id="zoombar">
+        <button class="zb" id="z-out" title="缩小">−</button>
+        <input type="range" id="z-range" min="20" max="240" value="80">
+        <button class="zb" id="z-in" title="放大">+</button>
+        <span class="zval" id="z-val">80%</span>
+        <button class="zb" id="z-fit" title="适应画布">⤢</button>
+      </div>
+    </div>
+    <div id="right">
+      <div class="card">
+        <h4>运行</h4>
+        <div class="btns">
+          <button class="btn primary" id="btn-run">▶ 运行</button>
+          <button class="btn" id="btn-step">单步</button>
+          <button class="btn" id="btn-reset">重置</button>
+        </div>
+        <div class="row"><label>速度（步/帧）</label><input type="number" id="speed" value="2" min="1" max="200" step="1"></div>
+        <div class="row"><label>已跑</label><b id="k-it" class="mono">0</b></div>
+        <div class="row"><label>自由能 F</label><b id="k-F" class="mono">—</b></div>
+        <div class="row"><label>重建误差 ‖ε₀‖²</label><b id="k-e0" class="mono">—</b></div>
+      </div>
+
+      <div class="card">
+        <h4>超参</h4>
+        <div class="row"><label>η_μ 推理</label><input type="number" id="p-lrmu" step="0.05" value="0.1"></div>
+        <div class="row"><label>η_θ 权重</label><input type="number" id="p-lrt" step="0.005" value="0.01"></div>
+        <div class="row"><label>η_β 偏置</label><input type="number" id="p-lrb" step="0.005" value="0.01"></div>
+        <div class="row"><label>每 N 步学一次</label><input type="number" id="p-ninfer" step="1" min="1" value="20"></div>
+        <div class="row"><label>种子</label><input type="number" id="p-seed" step="1" value="42"></div>
+        <div class="row"><label>顶层先验 ω</label><input type="number" id="p-wtop" step="0.01" min="0" value="0.02" title="顶层 ε = ω·μ；ω 越小，高阶表征越不会被压向 0"></div>
+        <div class="row"><label>固定样本</label><input type="checkbox" id="p-fixed" checked></div>
+      </div>
+
+      <div class="card">
+        <h4>曲线</h4>
+        <canvas class="chart" id="chart"></canvas>
+        <div class="legend"><span>自由能 F（log）</span><span>最近 240 步</span></div>
+      </div>
+
+      <div class="card" id="insp">
+        <h4>检视器</h4>
+        <div class="empty">点一个节点看它的语义、形状、以及它产生的 op。</div>
+      </div>
+    </div>
+  </div>
+
+  <div id="modal"><div class="box">
+    <div class="hd"><b id="m-title">导出</b><span class="sp"></span>
+      <button class="btn" id="m-save">保存…</button><button class="btn" id="m-copy">复制</button><button class="btn" id="m-close">关闭</button></div>
+    <pre id="m-body"></pre>
+  </div></div>
+  <input type="file" id="pk-file" accept=".json,application/json" hidden>
+  <div id="ctxmenu"></div>
+  <div class="toast" id="toast"></div>
+  <script type="module" src="./src/ui/main.js"></script>
+</body>
+</html>

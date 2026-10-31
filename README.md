@@ -26,9 +26,9 @@ open pc-studio.html             # 图形界面（单文件，零依赖，双击�
 | `gen/model.hpp` | 界面「导出 C++」产出的模型（21 op，二层预测编码） |
 | `examples/schedule_demo.cpp` | 在 `core/` 上跑 `gen/sched_comp1.hpp`：arena、op 数、计时、数值体检 |
 | `examples/pc_basic.cpp` | 用 `engine/pc.hpp` 搭两层模型并训练 |
-| `studio/` | 图形编辑器的源码：`studio.html` · `pcgraph.js`(图→Op[] lowering) · `bundle.js` · `dump_js.js` |
+| `studio/` | 图编辑器源码（ES 模块）：`index.html` · `styles/` · `src/engine/`(11 个模块) · `src/ui/`(18 个) · `test/` · `build.mjs`(打包成单文件) |
 | `tools/` | `schedgen.js`(schedule 编译器) · `emit.js`(把 schedule 落成 C++ 头) |
-| `pc-studio.html` | **主入口**：图形界面（内联了 `studio/pcgraph.js`） |
+| `pc-studio.html` | **主入口**：图形界面（由 `node studio/build.mjs` 从 `studio/` 打出来的单文件，不要手改） |
 | `reports/` | 两轮实验报告；`reports/data/` 是测量出来的 CSV |
 | `CMakeLists.txt` | 唯一构建入口（`build.sh` 只是它的薄包装） |
 
@@ -44,7 +44,7 @@ engine/    说"什么时候算、内存怎么复用"  ← 图形界面用它
 | 张量 | 缓冲区 id + 字节偏移（手算） | `Tens` 句柄 + `Shape`，偏移由计划器算 |
 | 内存 | 一个 `StateArena`，粒度到字节 | 区间着色，临时量自动复用 |
 | 次序 | 你给的 `std::vector<Op>` 顺序 | 按 `PH_PREDICT → PH_INFER → PH_LEARN` 排序 |
-| 谁来驱动 | 生成器（`tools/schedgen.js`）或手写 | 图编辑器（`pcgraph.js`） |
+| 谁来驱动 | 生成器（`tools/schedgen.js`）或手写 | 图编辑器（`studio/src/engine/`） |
 
 算子层的价值是**下限可控**：生成的 schedule 直接是 `Op[]`，没有解释器、没有虚函数，
 arena 大小、每个 op 的形状都是编译期定好的常量。图引擎的价值是**上限**：形状检查、相位、
@@ -91,12 +91,24 @@ TANH、ONE_MINUS_SQ、AXPY、CLAMP）、**集成**（EM：接 μ 与 θ，一次
 
 ```bash
 node tools/emit.js                 # 重新生成 gen/sched_comp1.hpp（顺便打印各配置规模）
-node studio/bundle.js              # 把 pcgraph.js 内联进 pc-studio.html
-node studio/dump_js.js 2000 500    # 在 node 里跑同一张图，用于和 C++ 对数
+node studio/build.mjs              # 把 studio/ 下的模块和样式打成根目录的 pc-studio.html
+node --test "studio/test/*.test.mjs"   # 引擎单测（11 条，零依赖，node 内置 runner）
+node studio/dump_js.mjs 2000 500   # 在 node 里跑同一张图，用于和 C++ 对数
 ```
 
-对数：`node studio/dump_js.js 2000 500 > /tmp/js.txt` 与 `./build/pc_basic 2000 500 > /tmp/cpp.txt`
+对数：`node studio/dump_js.mjs 2000 500 > /tmp/js.txt` 与 `./build/pc_basic 2000 500 > /tmp/cpp.txt`
 逐行应一致（末几位差来自 `sin/cos` 与 float32 舍入）。
+
+### 开发界面
+
+`pc-studio.html` 是**构建产物**，改界面请改 `studio/` 里的源文件，再跑一次 `node studio/build.mjs`：
+
+```bash
+python3 -m http.server 8000 --directory studio   # 然后开 http://localhost:8000/index.html
+```
+
+`studio/index.html` 走原生 ES module（改完刷新即可，无需构建）；`pc-studio.html` 是同一个程序
+打成的单文件，可以 `file://` 直接双击——两轨并存的原因见 `studio/README.md`。
 
 ## 5. 数字
 

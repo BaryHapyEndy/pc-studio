@@ -1,0 +1,35 @@
+/* 三栏骨架：左栏 / 画布 / 右栏，折叠与设置浮窗 */
+
+/* ── 布局 ── */
+#main{display:flex;height:calc(100% - 46px)}
+#left{width:206px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto}
+#stage{flex:1 1 auto;position:relative;overflow:hidden;cursor:default;
+  background:
+    radial-gradient(circle at 1px 1px,#171e28 1px,transparent 0) 0 0/24px 24px,
+    radial-gradient(circle at 1px 1px,#11161e 1px,transparent 0) 0 0/12px 12px,
+    #080b0f}
+#stage.drag{cursor:grabbing}
+#right{width:296px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);
+       overflow-y:auto;display:flex;flex-direction:column}
+
+/* ── 左栏：组件 / 设置 折叠 ── */
+.sec-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12.5px;
+          color:var(--fg);cursor:pointer;border-bottom:1px solid var(--line);user-select:none}
+.sec-head:hover{background:#121821}
+.sec-head .car{margin-left:auto;color:var(--dim2);font-size:10px;transition:.15s}
+.sec-head.open .car{transform:rotate(90deg)}
+#lc-body{display:none;overflow:auto}
+#lc-body.open{display:block}
+#left{display:flex;flex-direction:column}
+#left .grp{margin:9px 8px 3px}
+
+/* ── 设置浮窗（画布上方）── */
+#setpop{position:absolute;left:12px;top:12px;width:250px;background:var(--panel2);
+        border:1px solid var(--line2);border-radius:10px;z-index:14;display:none;
+        box-shadow:0 18px 40px rgba(0,0,0,.55)}
+#setpop.on{display:block}
+#setpop .hd{display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+#setpop .hd b{font-weight:600}
+#setpop .hd .x{margin-left:auto;cursor:pointer;color:var(--dim2);padding:0 3px}
+#setpop .hd .x:hover{color:var(--fg)}
+#setpop .bd{padding:4px 6px 9px}

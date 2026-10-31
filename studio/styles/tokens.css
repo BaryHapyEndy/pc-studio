@@ -1,0 +1,7 @@
+/* 色板与尺寸：换主题只改这里 */
+:root{
+  --bg:#0b0e13; --panel:#11151c; --panel2:#151a23; --line:#1e2633; --line2:#2a3444;
+  --fg:#d7dee8; --dim:#8b98a9; --dim2:#66717f; --acc:#4da3ff; --acc2:#7bd88f;
+  --warn:#e0a458; --bad:#ef7c74; --radius:8px;
+  color-scheme:dark;            /* 让原生滚动条/输入框按深色绘制 */
+}

@@ -1,0 +1,45 @@
+/* 顶栏：品牌、菜单按钮、状态徽标、左右栏开关 */
+
+/* ── 顶栏 ── */
+#top{height:46px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--panel);
+     border-bottom:1px solid var(--line);position:relative;z-index:20}
+#top .brand{font-weight:600;letter-spacing:.02em}
+#top .brand b{color:var(--acc)}
+#top .sep{width:1px;height:20px;background:var(--line2)}
+.pill{background:var(--panel2);border:1px solid var(--line2);color:var(--dim);
+      padding:4px 10px;border-radius:999px;cursor:pointer;font-size:12px;white-space:nowrap}
+.pill:hover{border-color:var(--acc);color:var(--fg)}
+.pill.on{background:rgba(77,163,255,.16);border-color:var(--acc);color:#cfe6ff}
+#toggles{margin-left:auto;display:flex;gap:6px;align-items:center}
+#stat{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)}
+#stat .badge{padding:3px 9px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2)}
+#stat .ok{color:#a8e6b8;border-color:rgba(123,216,143,.4);background:rgba(123,216,143,.1)}
+#stat .bad{color:#ffb3ad;border-color:rgba(239,124,116,.45);background:rgba(239,124,116,.1)}
+
+/* ── 顶栏菜单 ── */
+.menu-btn{position:relative;display:inline-flex}
+.menu{position:absolute;top:calc(100% + 7px);left:0;min-width:196px;background:var(--panel2);
+      border:1px solid var(--line2);border-radius:9px;padding:5px;display:none;z-index:40;
+      box-shadow:0 16px 34px rgba(0,0,0,.55)}
+.menu.on{display:block}
+.menu .mi{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;font-size:12px;
+          color:var(--fg);cursor:pointer;white-space:nowrap}
+.menu .mi:hover{background:#1d2734}
+.menu .mi .k{margin-left:auto;color:var(--dim2);font-size:11px}
+.menu .mi.dim{color:var(--dim2)}
+.menu .msep{height:1px;background:var(--line);margin:4px 2px}
+.menu .mhd{padding:5px 9px 3px;font-size:10.5px;color:var(--dim2);letter-spacing:.06em}
+
+/* ── 左右栏开关 ── */
+#main.hide-left #left{display:none}
+#main.hide-right #right{display:none}
+.tg.on,.tg:hover{border-color:#3d8bfd;color:#e6eefc}
+.tg.off{opacity:.45}
+#stage.cutting{cursor:crosshair}
+.mi.cur span:first-child{color:#7bd88f}
+#btn-tool.on{border-color:#ef7c74;color:#ef7c74}
+.tg{width:auto;padding:0 8px;height:22px;display:inline-flex;align-items:center;justify-content:center;
+    border:1px solid var(--line2);border-radius:6px;background:#0f141b;color:var(--dim);
+    cursor:pointer;font-size:12px;line-height:1}
+.tg:hover{color:var(--fg);border-color:var(--acc)}
+.tg.off{color:#4a5568;border-color:#222c3a}

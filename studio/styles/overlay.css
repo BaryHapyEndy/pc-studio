@@ -1,0 +1,41 @@
+/* 浮层：弹窗、右键菜单、框选矩形、缩放条 */
+
+/* ── 弹层 ── */
+#modal{position:fixed;inset:0;background:rgba(4,6,9,.72);display:none;z-index:50;padding:40px}
+#modal.on{display:flex} #modal .box{margin:auto;width:min(920px,100%);max-height:100%;display:flex;flex-direction:column;
+    background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+#modal .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+#modal .hd b{font-size:13px} #modal .hd .sp{margin-left:auto}
+#modal pre{margin:0;padding:12px;overflow:auto;flex:1;font:12px/1.55 "SF Mono",ui-monospace,monospace;color:#b9c7d8}
+.toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);opacity:0;
+   background:#18202b;border:1px solid var(--acc);color:#d9ecff;padding:8px 16px;border-radius:999px;
+   font-size:12px;transition:.18s;pointer-events:none;z-index:60}
+.toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+.hint{font-size:11px;color:var(--dim2);line-height:1.6}
+.sw{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+.sw input{width:auto}
+
+/* ── 框选 / 缩放条 ── */
+#marquee{position:absolute;border:1px solid var(--acc);background:rgba(77,163,255,.13);
+         border-radius:3px;pointer-events:none;display:none;z-index:8}
+#zoombar{position:absolute;right:14px;bottom:14px;display:flex;align-items:center;gap:7px;
+         background:rgba(17,21,28,.9);border:1px solid var(--line2);border-radius:999px;
+         padding:5px 9px;z-index:12;box-shadow:0 8px 20px rgba(0,0,0,.45)}
+#zoombar input[type=range]{width:124px}
+#zoombar .zval{width:38px;text-align:right;font-size:11px;color:var(--dim)}
+#zoombar .zb{width:22px;height:22px;border-radius:50%;border:1px solid var(--line2);background:#0f141b;
+             color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:0}
+#zoombar .zb:hover{color:var(--fg);border-color:var(--acc)}
+#stage{user-select:none}
+#stage.nogrid{background:#080b0f}
+#stage.panning{cursor:grabbing}
+
+/* ── 右键菜单 ── */
+#ctxmenu{position:fixed;min-width:132px;background:var(--panel2);border:1px solid var(--line2);
+         border-radius:8px;padding:4px;display:none;z-index:70;box-shadow:0 16px 34px rgba(0,0,0,.55)}
+#ctxmenu.on{display:block}
+#ctxmenu .ci{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;
+             font-size:12px;cursor:pointer;white-space:nowrap}
+#ctxmenu .ci:hover{background:#1d2734}
+#ctxmenu .ci .k{margin-left:auto;color:var(--dim2);font-size:11px}
+#ctxmenu .ci.dis{color:#4a5568;pointer-events:none}

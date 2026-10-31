@@ -1,0 +1,22 @@
+/* CSS reset、文档底色、滚动条 */
+
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--fg);font:13px/1.5 -apple-system,"SF Pro SC","PingFang SC",system-ui,sans-serif;
+     overflow:hidden;-webkit-font-smoothing:antialiased}
+.mono{font-family:"SF Mono",ui-monospace,Menlo,monospace}
+
+/* ── 滚动条 ── */
+/* 不用 scrollbar-color/scrollbar-width（会和下面的 ::-webkit-scrollbar 打架），
+   只用 webkit 伪元素，Chromium 系能完全控制轨道与滑块的颜色 */
+#left::-webkit-scrollbar,#right::-webkit-scrollbar,#lc-body::-webkit-scrollbar,
+#modal pre::-webkit-scrollbar{width:10px;height:10px}
+#left::-webkit-scrollbar-track,#right::-webkit-scrollbar-track,#lc-body::-webkit-scrollbar-track,
+#modal pre::-webkit-scrollbar-track{background:transparent}
+#left::-webkit-scrollbar-thumb,#right::-webkit-scrollbar-thumb,#lc-body::-webkit-scrollbar-thumb,
+#modal pre::-webkit-scrollbar-thumb{
+  background:#2c3748;border:2px solid transparent;border-radius:6px;background-clip:padding-box}
+#left::-webkit-scrollbar-thumb:hover,#right::-webkit-scrollbar-thumb:hover,
+#lc-body::-webkit-scrollbar-thumb:hover,#modal pre::-webkit-scrollbar-thumb:hover{
+  background:#3a4759;border:2px solid transparent;background-clip:padding-box}
+#left::-webkit-scrollbar-corner,#right::-webkit-scrollbar-corner{background:transparent}

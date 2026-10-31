@@ -4,7 +4,9 @@
 > 现在对应关系是——`tool/schedgen.js`、`tool/emit.js` → `tools/`；
 > 你原来的 `operation.hpp` / `stateArena.hpp` / `executor.hpp` → `core/`（四个融合扩展已并入）；
 > `test.hpp` 及其派生的 `verify.cpp` / `bench.cpp` / `behaviour.cpp` 已从发行版移除（报告里的实测数字保留作历史记录）；
-> `tool/studio.html`、`tool/pcgraph.js` → `studio/`；
+> `tool/studio.html`、`tool/pcgraph.js` → `studio/`（后来又按 `方案.txt` 拆成 ES 模块：
+> 界面在 `studio/src/ui/`、图→Op[] 的 lowering 与代码生成在 `studio/src/engine/`、样式在 `studio/styles/`，
+> `pc-studio.html` 由 `node studio/build.mjs` 打包生成）；
 > `pc-engine-graph.html`（老引擎的生成器界面）只服务于已删除的 test 模型，也一并移除。
 
 
