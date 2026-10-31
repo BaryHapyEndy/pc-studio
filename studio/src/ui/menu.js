@@ -9,13 +9,14 @@ import { autoLayout } from './autolayout.js';
 import { drawChart } from './monitor.js';
 import { toast, showModal, HELP } from './modal.js';
 import { saveCurrent, saveAs, openFile } from './file-io.js';
+import { DRAWINGS } from '../engine/drawings.js';
 
-// 预设（示例图纸只在「文件 → 示例图纸」里）
-export const DEMO_PRESETS = [
-  { id: 'basic', name: '基本模型（2 层 + EM）', make: () => PC.presetBasic([64, 1024]) },
-  { id: 'deep', name: '三层（EM 串联）', make: () => PC.presetDeep([64, 512, 256]) },
-  { id: 'single', name: '只有输入层（退化）', make: () => PC.presetSingle([64]) },
-];
+// 示例图纸：内容来自 src/engine/drawings.js（由 studio/import-drawing.mjs 生成），
+// 只在「文件 → 示例图纸」里出现。想换成自己的图纸：
+//     node studio/import-drawing.mjs 你的图纸.json && node studio/build.mjs
+export const DEMO_PRESETS = DRAWINGS.map(d => ({
+  id: d.id, name: d.name, make: () => JSON.parse(JSON.stringify(d.spec)),
+}));
 
 // 工具模式：'select' 默认，'scissor' 剪刀（左键划动剪线）
 export function setMode(m) {
@@ -30,7 +31,7 @@ export function closeToolMenu() { $('#toolmenu').classList.remove('on'); }
 
 export function newDrawing() {
   S.spec = {
-    v: 1, dims: [64], nodes: [], edges: [],
+    nodes: [], edges: [],
     lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, fixed: true,
   };
   S.curFile = null; S.curName = null;
@@ -66,11 +67,21 @@ export function bindTopBar() {
     else if (a === 'save') saveCurrent();
     else if (a === 'saveas') saveAs();
     else if (a === 'open') openFile();
-    else if (a === 'ex0') loadPreset(0);
-    else if (a === 'ex1') loadPreset(1);
-    else if (a === 'ex2') loadPreset(2);
+    else if (a === 'ex') loadPreset(+mi.dataset.i);
     else if (a === 'json') $('#btn-json').click();
     else if (a === 'cpp') $('#btn-cpp').click();
+  });
+
+  // 示例图纸列表按 drawings.js 生成（不用改 index.html）
+  const ex = $('#exlist');
+  ex.innerHTML = '';
+  DEMO_PRESETS.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'mi';
+    d.dataset.act = 'ex';
+    d.dataset.i = i;
+    d.textContent = p.name;
+    ex.appendChild(d);
   });
 
   // 工具菜单

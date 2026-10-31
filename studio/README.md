@@ -12,6 +12,8 @@ studio/
 │   └── dev/            #demo / #selftest 这类调试入口
 ├── test/               引擎冒烟测试（node --test）
 ├── build.mjs           把 src/ + styles/ 打成单文件
+├── import-drawing.mjs  把一张导出的图纸变成内置示例（写 src/engine/drawings.js）
+├── emit_model.mjs      重新生成 gen/model.hpp（= 界面里的「导出 C++」）
 └── dump_js.mjs         与 C++ 对数用的脚本
 ```
 
@@ -28,7 +30,17 @@ node studio/build.mjs
 # 3. 跑测试 / 与 C++ 对数
 node --test "studio/test/*.test.mjs"
 node studio/dump_js.mjs 2000 500      # 与 ./build/pc_basic 2000 500 对照
+
+# 4. 换内置示例图纸（「文件 → 示例图纸」里那几张）
+node studio/import-drawing.mjs ~/Downloads/drawing1.json   # 只留这一张
+node studio/import-drawing.mjs another.json --append       # 往后追加
+node studio/build.mjs                                      # 重新打包才生效
 ```
+
+改完图想同步 C++ 侧：`node studio/emit_model.mjs` 会重写 `gen/model.hpp`，再 `./build.sh` 即可。
+
+`import-drawing.mjs` 只做一件事：把图纸 JSON 原样写进 `src/engine/drawings.js`（纯数据模块）。
+所以示例图纸不依赖外部文件，打包成单文件后照样能用；`drawings.js` 是生成物，不要手改。
 
 ## 打包器在做什么
 
@@ -58,3 +70,4 @@ node studio/dump_js.mjs 2000 500      # 与 ./build/pc_basic 2000 500 对照
 | 节点长什么样 | `src/ui/geometry.js`（尺寸与端口位置）+ `src/ui/render.js`（DOM） |
 | 训练循环、曲线、监视格 | `src/ui/runner.js`、`src/ui/monitor.js` |
 | 保存/加载/导出 | `src/ui/file-io.js` |
+| 内置示例图纸 | `src/engine/drawings.js`（由 `import-drawing.mjs` 生成） |

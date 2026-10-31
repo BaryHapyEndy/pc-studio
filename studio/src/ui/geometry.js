@@ -34,9 +34,44 @@ export function geom(n) {
   return {
     w, h,
     info,
-    ins: ins.map((p, i) => ({ k: p.k, name: p.name || p.k, opt: !!p.optional, ...pin(i, 'in') })),
-    outs: outs.map((p, i) => ({ k: p.k, name: p.name || p.k, ...pin(ins.length + i, 'out') })),
+    ins: ins.map((p, i) => ({ k: p.k, name: p.name || p.k, optional: !!p.optional, write: !!p.write, ...pin(i, 'in') })),
+    outs: outs.map((p, i) => ({ k: p.k, name: p.name || p.k, optional: !!p.optional, write: !!p.write, ...pin(ins.length + i, 'out') })),
   };
+}
+
+// 端口颜色 —— 端口和连线两端颜色的唯一来源。规则分两段：
+//
+// 1) 没接线：
+//      必需输入口 → need 红（组件报错会追到这个口，提醒你接线）
+//      其余        → 不着色（灰环 + 全黑小圆），可选口没接是正常状态，不该占用颜色
+// 2) 接了线：按「方向」上色
+//      source 黄 = 输出口（组件右边，值从这里流出）
+//      sink   蓝 = 输入口（组件左边，值流进这个组件）
+//    所以每条连线天然是「黄 → 蓝」，靠近源那头黄、靠近汇那头蓝，方向不用箭头也看得懂。
+//
+// 颜色只由「方向」决定，与这个口是谁无关，因此自定义节点不需要为配色写任何特判。
+function roleOf(n, p, dir) {
+  const c = PC.LIBMAP[n.type] || {};
+  if (!isConnected(n.id, p.k, dir)) {
+    return (dir === 'in' && !p.optional && !c.state && !c.view) ? 'need' : '';
+  }
+  return dir === 'out' ? 'source' : 'sink';
+}
+
+// 端口当前有没有接线（渲染用它决定实心还是空心）
+export function isConnected(nodeId, port, dir) {
+  return S.spec.edges.some(e => (dir === 'in'
+    ? (e.to[0] === nodeId && e.to[1] === port)
+    : (e.from[0] === nodeId && e.from[1] === port)));
+}
+export function pinRole(n, p, dir) { return roleOf(n, p, dir); }
+// 给连线用：只知道节点 id 和端口名
+export function portRole(nodeId, port, dir) {
+  const n = S.spec.nodes.find(x => x.id === nodeId);
+  if (!n) return '';
+  const g = geom(n);
+  const p = (dir === 'in' ? g.ins : g.outs).find(x => x.k === port);
+  return p ? roleOf(n, p, dir) : '';
 }
 
 export function pinPos(nodeId, port, dir) {

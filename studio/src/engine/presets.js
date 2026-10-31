@@ -72,7 +72,7 @@ export function presetLayers(dims) {
   }
   // 输入 → 第 0 层
   edges.push({ from: ['x', 'out'], to: ['M0', 'in'] });
-  return { dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, nodes, edges };
+  return { lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, nodes, edges };
 }
 
 export function presetBasic(dims) { return presetLayers(dims || [64, 1024]); }
@@ -82,7 +82,7 @@ export function presetDeep(dims) { return presetLayers(dims || [64, 512, 256]); 
 export function presetSingle(dims) {
   const D = dims || [64];
   return {
-    dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02,
+    lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02,
     nodes: [{ id: 'x', type: 'x', name: 'x', shape: { r: 1, c: D[0] }, pos: { x: 60, y: 200 } },
             { id: 'M0', type: 'M', l: 0, name: 'M0', shape: { r: 1, c: D[0] }, pos: { x: 240, y: 200 } }],
     edges: [{ from: ['x', 'out'], to: ['M0', 'in'] }],

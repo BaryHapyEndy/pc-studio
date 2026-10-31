@@ -2,8 +2,10 @@
 
 /* ── 画布里的节点 ── */
 #world{position:absolute;left:0;top:0;transform-origin:0 0;width:100%;height:100%}
-.node{position:absolute;background:#0f141b;border:1px solid var(--line2);border-radius:9px;
+.node{position:absolute;z-index:1;background:#0f141b;border:1px solid var(--line2);border-radius:9px;
       box-shadow:0 6px 18px rgba(0,0,0,.45);user-select:none;overflow:hidden}
+/* 每个节点自成一个层叠上下文：端口小圆（z-index:2）不能画到别的节点上面去 */
+.node.sel,.node.err{z-index:3}
 .node.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc),0 8px 24px rgba(77,163,255,.18)}
 .node.err{border-color:var(--bad)}
 .node .hd{height:30px;display:flex;align-items:center;gap:6px;padding:0 9px;cursor:move;
@@ -15,11 +17,18 @@
 .port .lb{padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .port.out{justify-content:flex-end}
 .port.out .lb{text-align:right}
-.port .pin{position:absolute;width:11px;height:11px;border-radius:50%;background:#0b0f14;
-           border:2px solid #4a5a70;cursor:crosshair;z-index:2}
-.port .pin:hover{background:var(--acc);border-color:#bfe0ff;transform:scale(1.25)}
+.port .pin{position:absolute;width:11px;height:11px;border-radius:50%;box-sizing:border-box;
+           background:#0b0f14;border:2px solid #4a5a70;cursor:crosshair;z-index:2}
+/* 悬停只提亮描边，不改填充色——颜色是语义，不能被鼠标状态改掉 */
+.port .pin:hover{border-color:#e8f2ff;transform:scale(1.25)}
 .port.in .pin{left:-6px} .port.out .pin{right:-6px}
-.port .pin.hot{background:var(--acc2);border-color:#d8ffe4}
+.port .pin.hot{border-color:var(--acc2)}
+/* 端口颜色：环 = 方向色，同心小圆 = 比环暗一点的同色；没接线时环灰、小圆全黑。
+   --pin 是环色，--pin-in 是小圆色。 */
+.port .pin.sink{--pin:#4a7fb5;--pin-in:#2c5a86}
+.port .pin.source{--pin:#e0a458;--pin-in:#8a6633}
+.port .pin.need{--pin:#ef7c74;--pin-in:#0b0f14;border-color:var(--pin)}
+.port .pin.linked{border-color:var(--pin);background:var(--pin-in)}
 .port .val{position:absolute;right:12px;font-size:10px;color:var(--dim2)}
 .node .note{font-size:10.5px;color:#7d8b9d;padding:1px 10px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:"SF Mono",ui-monospace,monospace}
 .node .note:first-of-type{margin-top:5px;border-top:1px dashed #1b232e;padding-top:5px}

@@ -1,7 +1,7 @@
 /* studio/src/engine/names.js —— 节点 → 张量名 / 显示名 / 端口形状
  *
  * 这个模块负责：tname（写进 arena 和导出 C++ 的名字）、label（界面显示名）、
- * stateShape / portShape（按 dims 推端口形状）、edgeSource（按端口反查上游）。
+ * stateShape / portShape（端口形状完全由节点的 shape 与连线决定）、edgeSource（按端口反查上游）。
  */
 
 import { sh } from './shape.js';
@@ -24,22 +24,17 @@ export function label(n) {
   return c.name;
 }
 
-// 某个节点的端口形状
-// 状态组件的形状：用户显式填的优先，没填就按老规矩从 dims 推一个默认值
+// 状态组件的形状：就是节点上自己填的那个 shape。
+//（老图纸可能没填，给个兜底：θ 是 64×64，其余一律 1×64；界面上新建节点时都会填好）
+const FALLBACK_SHAPE = { T: sh(64, 64) };
 export function stateShape(spec, n) {
   if (n.shape && n.shape.r > 0 && n.shape.c > 0) return sh(n.shape.r, n.shape.c);
-  const D = spec.dims || [64, 1024];
-  if (n.type === 'x') return sh(1, D[0]);
-  if (n.type === 'M') return sh(1, D[n.l || 0]);
-  if (n.type === 'T') return sh(D[n.l || 0], D[(n.l || 0) - 1] || D[0]);
-  if (n.type === 'B' || n.type === 'E') return sh(1, D[(n.l || 1) - 1] || D[0]);
-  return sh(1, D[0]);
+  return FALLBACK_SHAPE[n.type] || sh(1, 64);
 }
 
 export function portShape(spec, n, port, isOut) {
   const c = LIBMAP[n.type];
   if (c.state) return isOut ? stateShape(spec, n) : null;
-  const D = spec.dims || [64, 1024];
   if (n.type === 'EM') {
     // EM 的形状由它接的状态决定（没接就无从谈起，返回 null 让 UI 只画个圆点）
     const mu = edgeSource(spec, n, 'mu'), th = edgeSource(spec, n, 'th');
@@ -50,10 +45,7 @@ export function portShape(spec, n, port, isOut) {
     if (isOut) return (port === 'f' || port === 'be1') ? Dd : Du;
     return (port === 'g') ? Dd : Du;
   }
-  const defs = isOut ? c.outs : c.ins;
-  const def = defs && defs.find(p => p.k === port);
-  if (!def || !def.shape) return null;   // 算子端口：形状由上游决定
-  return def.shape(D, n.l, n);
+  return null;   // 算子端口：形状由上游算出来，不在这里声明
 }
 
 export function edgeSource(spec, n, port) {

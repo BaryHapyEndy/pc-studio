@@ -16,8 +16,6 @@ import { num } from './init.js';
 // 建 ctx：Program、张量表 T、错误表，以及按 id 的正查 / 反查索引
 //（byId 是 id→节点，inc 是 "nodeId.port"→入边，就是原来的 byId / inc 邻接表）
 export function createLowerContext(spec) {
-  const D = spec.dims;
-  const L = D.length - 1;
   const pr = new Program();
   const errors = [];
   // 监视组件不进 lowering，但它的连线要能查到源张量
@@ -35,7 +33,7 @@ export function createLowerContext(spec) {
     if (byId[e.from[0]] && byId[e.to[0]]) inc[e.to[0] + '.' + e.to[1]] = e;
   }
 
-  return { spec, D, L, pr, T, errors, errNodes, writing, done, all, byId, inc, nodes, views: {} };
+  return { spec, pr, T, errors, errNodes, writing, done, all, byId, inc, nodes, views: {} };
 }
 
 // 报错：记进 errors，同时把节点记到 errNodes（界面据此标红）
@@ -268,12 +266,12 @@ export function collectViews(ctx) {
 
 // 收尾：有错就把 total 归零（界面显示规划不出来），没错就排 arena
 export function finalize(ctx, opts) {
-  const { pr, errors, T, D, L, views } = ctx;
+  const { pr, errors, T, views } = ctx;
   opts = opts || {};
   if (!errors.length) pr.plan(64, opts.reuse !== false);
   else pr.total = 0;
 
-  return { pr, errors, T, D, L, views };
+  return { pr, errors, T, views };
 }
 
 // 返回 {pr, errors, T, stats}

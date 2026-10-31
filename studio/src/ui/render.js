@@ -3,7 +3,7 @@
 import * as PC from '../engine/index.js';
 import { $, el } from './dom.js';
 import { S } from './store.js';
-import { geom, monitorSize } from './geometry.js';
+import { geom, monitorSize, pinRole, isConnected } from './geometry.js';
 import { drawWires } from './wires.js';
 import { paintStatus, paintMonitor, tensorByName } from './monitor.js';
 import { renderInspector } from './inspector.js';
@@ -36,6 +36,11 @@ export function refreshSel() {
 }
 
 // ───────────────────────── 重绘 ─────────────────────────
+// 端口画什么颜色（判定在 geometry.js 的 roleOf，这里只用结果）：
+//   sink   —— 蓝：输入口（组件左边，值流进这个组件）
+//   source —— 黄：输出口（组件右边，值从这个组件流出）
+//   need   —— 红：没连，但它是必需的输入口（算子 a/b、EM 的 μ/θ）
+// 另外 open class 标出"还没接线"：未接线画空心圈，颜色不变。
 export function rebuild() {
   // 只画图：rt 由 resetRun() 负责 lower + 初始化。
   // （这里曾经重新 lower 一次，等于把训练好的状态清零，表现为 M[1]/T[1] 全部塌成 0）
@@ -58,18 +63,33 @@ export function rebuild() {
                    `<span class="tag">${n.type === 'EM' ? 'MACRO' : (c.state ? 'STATE' : 'OP')}</span>`;
     d.appendChild(hd);
     const bd = el('div', 'bd');
+
+    // 一个端口的 HTML：连接点 + 名称。颜色 class 来自 geometry 的 roleOf（按方向、且只在接线后上色），
+    // linked 表示已接线——已接线时小圆填成"比环暗一点"的同色，没接线时小圆保持全黑。
+    // 输入口把连接点放行首、输出口放行尾，和「左进右出」的画法一致。
+    const portHTML = (n2, p, dir) => {
+      const role = pinRole(n2, p, dir);
+      const linked = isConnected(n2.id, p.k, dir);
+      const cls = 'pin' + (role ? ' ' + role : '') + (linked ? ' linked' : '');
+      const tip = role === 'need' ? ' title="这个输入必需，还没连"'
+                : linked ? '' : ' title="还没接线"';
+      const pinTag = `<span class="${cls}" data-node="${n2.id}" data-port="${p.k}" data-dir="${dir}"` +
+                     ` style="top:4.5px"${tip}></span>`;
+      const label = `<span class="lb">${p.name}</span>`;
+      return dir === 'in' ? pinTag + label : label + pinTag;
+    };
+
     for (const p of g.ins) {
       const r = el('div', 'port in');
-      r.innerHTML = `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="in" style="top:4.5px"></span>` +
-                    `<span class="lb">${p.name}</span>`;
+      r.innerHTML = portHTML(n, p, 'in');
       bd.appendChild(r);
     }
     for (const p of g.outs) {
       const r = el('div', 'port out');
-      r.innerHTML = `<span class="lb">${p.name}</span>` +
-                    `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="out" style="top:4.5px"></span>`;
+      r.innerHTML = portHTML(n, p, 'out');
       bd.appendChild(r);
     }
+
     for (const line of g.info) {
       const r = el('div', 'note', line);
       bd.appendChild(r);

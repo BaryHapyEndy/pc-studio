@@ -1,10 +1,11 @@
 // 这个模块负责：全局状态容器 S、统一的变更通知（onChange / notify），以及选中集、「名字唯一化」这两个最小的状态读写工具。
 
 import * as PC from '../engine/index.js';
+import { DRAWINGS } from '../engine/drawings.js';
 
 // 所有会被多个模块读写的状态都放这里，别的模块一律通过 S.xxx 访问。
 export const S = {
-  spec: PC.presetBasic([64, 1024]),   // 图纸（节点 + 连线 + 超参）
+  spec: JSON.parse(JSON.stringify(DRAWINGS[0].spec)),   // 图纸（节点 + 连线 + 超参）；默认 = 内置示例
   view: { x: 40, y: 20, k: 0.8 },     // 画布视图
   sel: null,              // 主选中（检视器看这个）
   selSet: new Set(),      // 当前选中的全部节点

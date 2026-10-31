@@ -13,7 +13,6 @@ import { stateTypes } from './init.js';
 export function emitCpp(spec, name) {
   const { pr, errors } = lower(spec, { reuse: true });
   if (errors.length) return { text: '// 图有错误，无法导出：\n' + errors.map(e => '//   ' + e.msg).join('\n'), errors };
-  const D = spec.dims, L = D.length - 1;
   const varOf = {}, refOf = {};
   pr.tensors.forEach((t, i) => {
     varOf[t.name] = 't' + i;
@@ -29,8 +28,6 @@ export function emitCpp(spec, name) {
   p('#include "engine/pc.hpp"');
   p('');
   p(`namespace gen_${name || 'model'} {`);
-  p(`inline constexpr int NL = ${L};`);
-  p(`inline constexpr int D[${D.length}] = {${D.join(', ')}};`);
   p('');
   p('struct Model {');
   p('    pc::Program pr;');

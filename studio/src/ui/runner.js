@@ -46,7 +46,10 @@ export function stepOnce(dt) {
   if (S.it % nI === 0 && !fixed) S.sampleIdx = (S.sampleIdx + 1) % (S.data ? S.data.length : 1);
   const fe = PC.freeEnergy(S.rt.pr, S.spec);
   S.lastF = fe.F;
-  const e0 = fe.perLayer.find(p => p.name === 'E0');
+  // ‖ε₀‖²：取层级最低的那个误差状态。名字可能是 E0 / E_0 / err0，
+  // 所以按「名字里的数字最小」来挑，而不是硬匹配 'E0'。
+  const idx = p => { const m = String(p.name).match(/(\d+)\s*$/); return m ? +m[1] : 1e9; };
+  const e0 = fe.perLayer.slice().sort((a, b) => idx(a) - idx(b) || a.name.localeCompare(b.name))[0];
   S.lastE0 = e0 ? e0.e : 0;
   S.hist.push(Math.max(1e-9, S.lastF));
 }

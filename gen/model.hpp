@@ -1,12 +1,10 @@
-// 由 pc-studio 导出 —— 层宽 D = [64, 1024]，21 个 op，arena 805120 B
+// 由 pc-studio 导出 —— 10 个状态，21 个 op，arena 805120 B
 // 与界面里的图一一对应；用法见 examples/pc_basic.cpp
 #pragma once
 #include <cstdint>
 #include "engine/pc.hpp"
 
 namespace gen_model {
-inline constexpr int NL = 1;
-inline constexpr int D[2] = {64, 1024};
 
 struct Model {
     pc::Program pr;

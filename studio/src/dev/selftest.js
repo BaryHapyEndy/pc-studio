@@ -62,9 +62,12 @@ export function runSelftest() {
     log('palette-collapsed', !document.querySelector('#lc-body').classList.contains('open'));
     document.querySelector('#lc-head').click();
 
-    // 7) 监视组件：拖一个上去，接到 E0，出方阵
+    // 7) 监视组件：拖一个上去，接到最底层的误差状态，出方阵
+    //    不写死名字（图纸里的状态可能叫 E0 / E_0 / err0），按「名字末尾数字最小」挑。
     const mon = addNode('MON', { x: 980, y: 640 });
-    connect('E0', 'out', mon.id, 'v');
+    const tail = s => { const m = String(s).match(/(\d+)\s*$/); return m ? +m[1] : 1e9; };
+    const eNode = S.spec.nodes.filter(n => n.type === 'E').sort((a, b) => tail(a.name) - tail(b.name))[0];
+    if (eNode) connect(eNode.id, 'out', mon.id, 'v');
     log('mon-cells', document.querySelectorAll(`.mon[data-mon="${mon.id}"] i`).length, 'tensor', (S.rt.views[mon.id] || {}).name);
 
     // 8) 改形状 → 校验报错
@@ -89,13 +92,38 @@ export function runSelftest() {
     log('pasted', nBefore, '->', S.spec.nodes.length, 'sel', S.selSet.size);
     setToast(oldToast);
 
-    // 10) 示例图纸从菜单切
+    // 10) 示例图纸从菜单切（菜单项由 engine/drawings.js 生成，这里验证"列表 + 点击可用"）
     document.querySelector('#btn-file').click();
-    document.querySelector('#filemenu .mi[data-act="ex1"]').click();
-    log('example3-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length);
-    document.querySelector('#btn-file').click();
-    document.querySelector('#filemenu .mi[data-act="ex2"]').click();
-    log('example1-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length);
+    const exItems = document.querySelectorAll('#filemenu #exlist .mi');
+    exItems[0].click();
+    log('example-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length,
+        'items', exItems.length);
+
+    // 11) 端口颜色：语义色（黄=落进状态缓冲区 / 蓝=算出来的值），没连的必需端口标红
+    const pinOf = (nid, k, dir) =>
+      document.querySelector(`.node[data-id="${nid}"] .port.${dir} .pin[data-port="${k}"]`);
+    const aNode = addNode('ADD', { x: 60, y: 800 });
+    rebuild();
+    log('pin-need', (pinOf(aNode.id, 'a', 'in') || {}).className);
+    const e = S.spec.edges.find(x => x.to[1] === 'in');
+    log('pin-in', (pinOf(e.to[0], e.to[1], 'in') || {}).className);
+    log('pin-out', (pinOf(e.from[0], e.from[1], 'out') || {}).className);
+
+    // 12) 端口着色审计：接线的口必须上色（蓝 in / 黄 out），没接的只能是灰或红，
+    //     不允许出现"接了线却不着色"或"没接却着色"的口
+    const pins = [...document.querySelectorAll('.pin')];
+    const cnt = k => pins.filter(p => p.classList.contains(k)).length;
+    const linkedNoColor = pins.filter(p => p.classList.contains('linked') &&
+      !p.classList.contains('sink') && !p.classList.contains('source'));
+    const unlinkedColored = pins.filter(p => !p.classList.contains('linked') &&
+      (p.classList.contains('sink') || p.classList.contains('source')));
+    log('pin-audit', 'total', pins.length, 'in', cnt('sink'), 'out', cnt('source'),
+        'need', cnt('need'), 'gray', pins.length - cnt('sink') - cnt('source') - cnt('need'),
+        'bad', linkedNoColor.length + unlinkedColored.length);
+    // #needshot：把这个没接线的 ADD 留在画布上，方便截图看「必需端口标红」
+    if (location.hash.includes('needshot')) { aNode.pos.y = 620; rebuild(); return; }
+    S.spec.nodes = S.spec.nodes.filter(n => n.id !== aNode.id);
+    rebuild();
 
     log('canFS', canFS, 'save-as-test', typeof saveTextAs);
 

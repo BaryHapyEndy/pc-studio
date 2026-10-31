@@ -123,8 +123,10 @@
 
   /* ── 画布里的节点 ── */
   #world{position:absolute;left:0;top:0;transform-origin:0 0;width:100%;height:100%}
-  .node{position:absolute;background:#0f141b;border:1px solid var(--line2);border-radius:9px;
+  .node{position:absolute;z-index:1;background:#0f141b;border:1px solid var(--line2);border-radius:9px;
         box-shadow:0 6px 18px rgba(0,0,0,.45);user-select:none;overflow:hidden}
+  /* 每个节点自成一个层叠上下文：端口小圆（z-index:2）不能画到别的节点上面去 */
+  .node.sel,.node.err{z-index:3}
   .node.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc),0 8px 24px rgba(77,163,255,.18)}
   .node.err{border-color:var(--bad)}
   .node .hd{height:30px;display:flex;align-items:center;gap:6px;padding:0 9px;cursor:move;
@@ -136,11 +138,18 @@
   .port .lb{padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .port.out{justify-content:flex-end}
   .port.out .lb{text-align:right}
-  .port .pin{position:absolute;width:11px;height:11px;border-radius:50%;background:#0b0f14;
-             border:2px solid #4a5a70;cursor:crosshair;z-index:2}
-  .port .pin:hover{background:var(--acc);border-color:#bfe0ff;transform:scale(1.25)}
+  .port .pin{position:absolute;width:11px;height:11px;border-radius:50%;box-sizing:border-box;
+             background:#0b0f14;border:2px solid #4a5a70;cursor:crosshair;z-index:2}
+  /* 悬停只提亮描边，不改填充色——颜色是语义，不能被鼠标状态改掉 */
+  .port .pin:hover{border-color:#e8f2ff;transform:scale(1.25)}
   .port.in .pin{left:-6px} .port.out .pin{right:-6px}
-  .port .pin.hot{background:var(--acc2);border-color:#d8ffe4}
+  .port .pin.hot{border-color:var(--acc2)}
+  /* 端口颜色：环 = 方向色，同心小圆 = 比环暗一点的同色；没接线时环灰、小圆全黑。
+     --pin 是环色，--pin-in 是小圆色。 */
+  .port .pin.sink{--pin:#4a7fb5;--pin-in:#2c5a86}
+  .port .pin.source{--pin:#e0a458;--pin-in:#8a6633}
+  .port .pin.need{--pin:#ef7c74;--pin-in:#0b0f14;border-color:var(--pin)}
+  .port .pin.linked{border-color:var(--pin);background:var(--pin-in)}
   .port .val{position:absolute;right:12px;font-size:10px;color:var(--dim2)}
   .node .note{font-size:10.5px;color:#7d8b9d;padding:1px 10px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:"SF Mono",ui-monospace,monospace}
   .node .note:first-of-type{margin-top:5px;border-top:1px dashed #1b232e;padding-top:5px}
@@ -253,9 +262,7 @@
         <div class="mi" data-act="open">加载图纸…<span class="k">⌘O</span></div>
         <div class="msep"></div>
         <div class="mhd">示例图纸</div>
-        <div class="mi" data-act="ex0">两层（M[0] ↔ M[1]）</div>
-        <div class="mi" data-act="ex1">三层（EM 串联）</div>
-        <div class="mi" data-act="ex2">只有输入层（退化）</div>
+        <div id="exlist"></div>
         <div class="msep"></div>
         <div class="mi" data-act="json">导出 JSON…</div>
         <div class="mi" data-act="cpp">导出 C++ 代码…</div>
@@ -609,62 +616,65 @@ const LIB = [
   // 状态组件：名字和形状都是用户自己填的（不预设层宽 D）。
   // 算子连上来之后，会按连线的形状去校验，不合法就在节点上报错。
   { id: 'x', name: '输入 x', group: '状态', color: '#e2b86b', note: '观测。最低层，永远不被更新',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'x' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'x' }] },
 
   { id: 'M', name: '后验 μ', group: '状态', color: '#69c98a', note: '后验状态，典型形状 1 × n 的行向量',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'μ' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'μ' }] },
 
   { id: 'T', name: '权重 θ', group: '状态', color: '#5aa9e6', note: '权重状态，典型形状 n_上 × n_下',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'θ' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'θ' }] },
 
   { id: 'B', name: '偏置 β', group: '状态', color: '#9b7ff0', note: '偏置状态，形状要和它预测的那层一致',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'β' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'β' }] },
 
   { id: 'E', name: '误差 ε', group: '状态', color: '#ef7c74', note: '误差状态 ε = μ − f',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'ε' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'ε' }] },
 
   { id: 'V', name: '中间量', group: '状态', color: '#8d9bb0', note: '通用命名缓冲区（f、d、g …放在这里好观察）',
-    state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'v' }] },
+    state: true, ins: [{ k: 'in', name: '写', optional: true }], outs: [{ k: 'out', optional: true, name: 'v' }] },
 
   { id: 'MON', name: '监视', group: '状态', color: '#7bd88f', note: '把一个张量画成方阵热力图（纯显示，不参与计算）',
-    view: true, ins: [{ k: 'v', name: '看' }], outs: [] },
+    view: true, ins: [{ k: 'v', name: '看', optional: true }], outs: [] },
 
   { id: 'MATMUL_NN', name: 'MATMUL_NN', group: '算子', color: '#7fa8d8', note: 'd = a·b',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'MATMUL_NT', name: 'MATMUL_NT', group: '算子', color: '#7fa8d8', note: 'd = a·bᵀ',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'MATMUL_TN', name: 'MATMUL_TN', group: '算子', color: '#7fa8d8', note: 'd = aᵀ·b',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'ADD', name: 'ADD', group: '算子', color: '#7fa8d8', note: 'd = a + b',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'SUB', name: 'SUB', group: '算子', color: '#7fa8d8', note: 'd = a − b',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'MUL', name: 'MUL', group: '算子', color: '#7fa8d8', note: 'd = a ⊙ b',
-    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'SCALE', name: 'SCALE', group: '算子', color: '#7fa8d8', note: 'd = s·a',
-    params: ['s'], defaults: { s: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    params: ['s'], defaults: { s: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'TANH', name: 'TANH', group: '算子', color: '#7fa8d8', note: 'd = tanh(a)',
-    ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'ONE_MINUS_SQ', name: 'ONE_MINUS_SQ', group: '算子', color: '#7fa8d8', note: 'd = 1 − a²（tanh 导数）',
-    ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'AXPY', name: 'AXPY 累加', group: '算子', color: '#e0a458', note: 'd += s·a —— 原地写回状态',
-    params: ['s'], defaults: { s: 0.1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    params: ['s'], defaults: { s: 0.1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd', optional: true }] },
   { id: 'CLAMP', name: 'CLAMP', group: '算子', color: '#7fa8d8', note: 'd = clip(a, ±c)',
-    params: ['c'], defaults: { c: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    params: ['c'], defaults: { c: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd', optional: true }] },
 
   { id: 'EM', name: 'EM 集成块', group: '集成', color: '#e8a0c0',
     note: '一层的前向预测 + 误差 + 推理更新 + 学习更新。左下接 g（下层的 ε⊙d），左侧三个状态位的读/写各走一条线。',
     macro: true, params: ['l'],
+    // 必需（不接就算不出来）：mu、th。其余都可以不接——g/fa 缺了就当 0，
+    // be 缺了 EM 自己造一个，mu1/th1/be1 不接就只是「不做更新」。
     ins: [{ k: 'g', name: 'g（下层 ε⊙d）', optional: true },
-          { k: 'mu', name: 'μ（读）', optional: true },
-          { k: 'th', name: 'θ（读）', optional: true },
+          { k: 'mu', name: 'μ（读）' },
+          { k: 'th', name: 'θ（读）' },
           { k: 'be', name: 'β（读）', optional: true },
           { k: 'fa', name: 'f_l（上层预测）', optional: true }],
-    outs: [{ k: 'f', name: 'f（预测下层）' },
-           { k: 'eps', name: 'ε（本层误差）' },
-           { k: 'mu1', name: 'μ′ 写回' },
-           { k: 'th1', name: 'θ′ 写回' },
-           { k: 'be1', name: 'β′ 写回' }] },
+    // EM 右侧整排都是输出口（黄）；要不要接到状态上由用户决定。
+    outs: [{ k: 'f', name: 'f（预测下层）', optional: true },
+           { k: 'eps', name: 'ε（本层误差）', optional: true },
+           { k: 'mu1', name: 'μ′ 写回', optional: true },
+           { k: 'th1', name: 'θ′ 写回', optional: true },
+           { k: 'be1', name: 'β′ 写回', optional: true }] },
 ];
 const LIBMAP = {}; LIB.forEach(c => (LIBMAP[c.id] = c));
 
@@ -672,7 +682,7 @@ const LIBMAP = {}; LIB.forEach(c => (LIBMAP[c.id] = c));
 /* studio/src/engine/names.js —— 节点 → 张量名 / 显示名 / 端口形状
  *
  * 这个模块负责：tname（写进 arena 和导出 C++ 的名字）、label（界面显示名）、
- * stateShape / portShape（按 dims 推端口形状）、edgeSource（按端口反查上游）。
+ * stateShape / portShape（端口形状完全由节点的 shape 与连线决定）、edgeSource（按端口反查上游）。
  */
 
 // 张量名（进 arena / 导出 C++）：M0, T1, E0, V_P0 …
@@ -692,22 +702,17 @@ function label(n) {
   return c.name;
 }
 
-// 某个节点的端口形状
-// 状态组件的形状：用户显式填的优先，没填就按老规矩从 dims 推一个默认值
+// 状态组件的形状：就是节点上自己填的那个 shape。
+//（老图纸可能没填，给个兜底：θ 是 64×64，其余一律 1×64；界面上新建节点时都会填好）
+const FALLBACK_SHAPE = { T: sh(64, 64) };
 function stateShape(spec, n) {
   if (n.shape && n.shape.r > 0 && n.shape.c > 0) return sh(n.shape.r, n.shape.c);
-  const D = spec.dims || [64, 1024];
-  if (n.type === 'x') return sh(1, D[0]);
-  if (n.type === 'M') return sh(1, D[n.l || 0]);
-  if (n.type === 'T') return sh(D[n.l || 0], D[(n.l || 0) - 1] || D[0]);
-  if (n.type === 'B' || n.type === 'E') return sh(1, D[(n.l || 1) - 1] || D[0]);
-  return sh(1, D[0]);
+  return FALLBACK_SHAPE[n.type] || sh(1, 64);
 }
 
 function portShape(spec, n, port, isOut) {
   const c = LIBMAP[n.type];
   if (c.state) return isOut ? stateShape(spec, n) : null;
-  const D = spec.dims || [64, 1024];
   if (n.type === 'EM') {
     // EM 的形状由它接的状态决定（没接就无从谈起，返回 null 让 UI 只画个圆点）
     const mu = edgeSource(spec, n, 'mu'), th = edgeSource(spec, n, 'th');
@@ -718,10 +723,7 @@ function portShape(spec, n, port, isOut) {
     if (isOut) return (port === 'f' || port === 'be1') ? Dd : Du;
     return (port === 'g') ? Dd : Du;
   }
-  const defs = isOut ? c.outs : c.ins;
-  const def = defs && defs.find(p => p.k === port);
-  if (!def || !def.shape) return null;   // 算子端口：形状由上游决定
-  return def.shape(D, n.l, n);
+  return null;   // 算子端口：形状由上游算出来，不在这里声明
 }
 
 function edgeSource(spec, n, port) {
@@ -782,8 +784,6 @@ function initProgram(pr, spec) {
 // 建 ctx：Program、张量表 T、错误表，以及按 id 的正查 / 反查索引
 //（byId 是 id→节点，inc 是 "nodeId.port"→入边，就是原来的 byId / inc 邻接表）
 function createLowerContext(spec) {
-  const D = spec.dims;
-  const L = D.length - 1;
   const pr = new Program();
   const errors = [];
   // 监视组件不进 lowering，但它的连线要能查到源张量
@@ -801,7 +801,7 @@ function createLowerContext(spec) {
     if (byId[e.from[0]] && byId[e.to[0]]) inc[e.to[0] + '.' + e.to[1]] = e;
   }
 
-  return { spec, D, L, pr, T, errors, errNodes, writing, done, all, byId, inc, nodes, views: {} };
+  return { spec, pr, T, errors, errNodes, writing, done, all, byId, inc, nodes, views: {} };
 }
 
 // 报错：记进 errors，同时把节点记到 errNodes（界面据此标红）
@@ -1034,12 +1034,12 @@ function collectViews(ctx) {
 
 // 收尾：有错就把 total 归零（界面显示规划不出来），没错就排 arena
 function finalize(ctx, opts) {
-  const { pr, errors, T, D, L, views } = ctx;
+  const { pr, errors, T, views } = ctx;
   opts = opts || {};
   if (!errors.length) pr.plan(64, opts.reuse !== false);
   else pr.total = 0;
 
-  return { pr, errors, T, D, L, views };
+  return { pr, errors, T, views };
 }
 
 // 返回 {pr, errors, T, stats}
@@ -1101,7 +1101,6 @@ function freeEnergy(pr, spec) {
 function emitCpp(spec, name) {
   const { pr, errors } = lower(spec, { reuse: true });
   if (errors.length) return { text: '// 图有错误，无法导出：\n' + errors.map(e => '//   ' + e.msg).join('\n'), errors };
-  const D = spec.dims, L = D.length - 1;
   const varOf = {}, refOf = {};
   pr.tensors.forEach((t, i) => {
     varOf[t.name] = 't' + i;
@@ -1117,8 +1116,6 @@ function emitCpp(spec, name) {
   p('#include "engine/pc.hpp"');
   p('');
   p(`namespace gen_${name || 'model'} {`);
-  p(`inline constexpr int NL = ${L};`);
-  p(`inline constexpr int D[${D.length}] = {${D.join(', ')}};`);
   p('');
   p('struct Model {');
   p('    pc::Program pr;');
@@ -1257,7 +1254,7 @@ function presetLayers(dims) {
   }
   // 输入 → 第 0 层
   edges.push({ from: ['x', 'out'], to: ['M0', 'in'] });
-  return { dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, nodes, edges };
+  return { lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, nodes, edges };
 }
 
 function presetBasic(dims) { return presetLayers(dims || [64, 1024]); }
@@ -1267,7 +1264,7 @@ function presetDeep(dims) { return presetLayers(dims || [64, 512, 256]); }
 function presetSingle(dims) {
   const D = dims || [64];
   return {
-    dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02,
+    lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02,
     nodes: [{ id: 'x', type: 'x', name: 'x', shape: { r: 1, c: D[0] }, pos: { x: 60, y: 200 } },
             { id: 'M0', type: 'M', l: 0, name: 'M0', shape: { r: 1, c: D[0] }, pos: { x: 240, y: 200 } }],
     edges: [{ from: ['x', 'out'], to: ['M0', 'in'] }],
@@ -1300,12 +1297,583 @@ const PRESETS = {
  */
 const PC = { sh, same, fmtShape, MT, Program, PH, PHNAME, planBuffers, execOp, runPhase, LIB, LIBMAP, tname, label, stateShape, portShape, edgeSource, lower, initProgram, stateTypes, num, metrics, freeEnergy, emitCpp, presetLayers, presetBasic, presetDeep, presetSingle, PRESETS };
 
+/* ── src/engine/drawings.js ── */
+/* studio/src/engine/drawings.js —— 内置示例图纸（**自动生成，别手改**）
+ *
+ * 这个模块负责：给「文件 → 示例图纸」提供内置图纸。内容是纯数据，不依赖任何外部文件，
+ * 所以打包成 pc-studio.html 之后依然可用。
+ *
+ * 换图纸：
+ *     node studio/import-drawing.mjs 你的图纸.json          # 只用这一张
+ *     node studio/import-drawing.mjs 你的图纸.json --append # 追加
+ * 然后 node studio/build.mjs 重新打包。
+ */
+
+const DRAWINGS = [
+  {
+    "id": "drawing1",
+    "name": "三层示例（drawing1）",
+    "spec": {
+      "nodes": [
+        {
+          "id": "m100",
+          "type": "M",
+          "name": "M_1",
+          "shape": {
+            "r": 1,
+            "c": 128
+          },
+          "l": 1,
+          "pos": {
+            "x": -0.4322069722542956,
+            "y": 187.38941756222692
+          }
+        },
+        {
+          "id": "b101",
+          "type": "B",
+          "name": "B_1",
+          "shape": {
+            "r": 1,
+            "c": 64
+          },
+          "l": 1,
+          "pos": {
+            "x": -1.979264927141287,
+            "y": 459.9266742361938
+          }
+        },
+        {
+          "id": "t102",
+          "type": "T",
+          "name": "T_1",
+          "shape": {
+            "r": 128,
+            "c": 64
+          },
+          "l": 1,
+          "pos": {
+            "x": 0.40524372067795866,
+            "y": 327.30600182740494
+          }
+        },
+        {
+          "id": "em105",
+          "type": "EM",
+          "l": 1,
+          "pos": {
+            "x": 196.0137924289137,
+            "y": 61.13926212806428
+          }
+        },
+        {
+          "id": "v112",
+          "type": "V",
+          "name": "v_1",
+          "shape": {
+            "r": 1,
+            "c": 64
+          },
+          "pos": {
+            "x": 478.3891690836786,
+            "y": 64.72492538162257
+          }
+        },
+        {
+          "id": "one_minus_sq115",
+          "type": "ONE_MINUS_SQ",
+          "pos": {
+            "x": 673.6537726515985,
+            "y": 432.26687160954594
+          }
+        },
+        {
+          "id": "mul116",
+          "type": "MUL",
+          "pos": {
+            "x": 667.1179951515967,
+            "y": 585.1986044477387
+          }
+        },
+        {
+          "id": "m117",
+          "type": "M",
+          "name": "M_0",
+          "shape": {
+            "r": 1,
+            "c": 64
+          },
+          "l": 1,
+          "pos": {
+            "x": 478.1670781204512,
+            "y": 202.94509978190317
+          }
+        },
+        {
+          "id": "x118",
+          "type": "x",
+          "name": "x",
+          "shape": {
+            "r": 1,
+            "c": 64
+          },
+          "pos": {
+            "x": 284.62666014927805,
+            "y": -123.21145892455773
+          }
+        },
+        {
+          "id": "e119",
+          "type": "E",
+          "name": "E_0",
+          "shape": {
+            "r": 1,
+            "c": 64
+          },
+          "l": 1,
+          "pos": {
+            "x": 485.07176085040567,
+            "y": 613.3126405980018
+          }
+        },
+        {
+          "id": "sub120",
+          "type": "SUB",
+          "pos": {
+            "x": 658.0935624851991,
+            "y": 223.44068474461537
+          }
+        },
+        {
+          "id": "m103",
+          "type": "M",
+          "name": "M_2",
+          "shape": {
+            "r": 1,
+            "c": 1024
+          },
+          "l": 1,
+          "pos": {
+            "x": -505.65605760380095,
+            "y": 61.263834110611235
+          }
+        },
+        {
+          "id": "b104",
+          "type": "B",
+          "name": "B_2",
+          "shape": {
+            "r": 1,
+            "c": 128
+          },
+          "l": 1,
+          "pos": {
+            "x": -508.80125807716115,
+            "y": 330.71331131418793
+          }
+        },
+        {
+          "id": "t105",
+          "type": "T",
+          "name": "T_2",
+          "shape": {
+            "r": 1024,
+            "c": 128
+          },
+          "l": 1,
+          "pos": {
+            "x": -508.1233975143716,
+            "y": 198.09263890539913
+          }
+        },
+        {
+          "id": "em106",
+          "type": "EM",
+          "l": 2,
+          "pos": {
+            "x": -306.0873491097617,
+            "y": 62.40309623867551
+          }
+        },
+        {
+          "id": "v107",
+          "type": "V",
+          "name": "v_2",
+          "shape": {
+            "r": 1,
+            "c": 128
+          },
+          "pos": {
+            "x": -1.453667427558969,
+            "y": 62.14785356078832
+          }
+        },
+        {
+          "id": "e108",
+          "type": "E",
+          "name": "E_1",
+          "shape": {
+            "r": 1,
+            "c": 128
+          },
+          "l": 1,
+          "pos": {
+            "x": -0.8562568509669006,
+            "y": 614.4060867943431
+          }
+        },
+        {
+          "id": "one_minus_sq109",
+          "type": "ONE_MINUS_SQ",
+          "pos": {
+            "x": 194.33730547942866,
+            "y": 438.0136460265935
+          }
+        },
+        {
+          "id": "mul110",
+          "type": "MUL",
+          "pos": {
+            "x": 193.52821046389533,
+            "y": 586.6503670014349
+          }
+        },
+        {
+          "id": "mon111",
+          "type": "MON",
+          "pos": {
+            "x": -2.0216934570385092,
+            "y": 791.1236075027374
+          }
+        },
+        {
+          "id": "mon101",
+          "type": "MON",
+          "pos": {
+            "x": 488.40309825435713,
+            "y": 789.219154521152
+          }
+        }
+      ],
+      "edges": [
+        {
+          "from": [
+            "m100",
+            "out"
+          ],
+          "to": [
+            "em105",
+            "mu"
+          ]
+        },
+        {
+          "from": [
+            "t102",
+            "out"
+          ],
+          "to": [
+            "em105",
+            "th"
+          ]
+        },
+        {
+          "from": [
+            "b101",
+            "out"
+          ],
+          "to": [
+            "em105",
+            "be"
+          ]
+        },
+        {
+          "from": [
+            "em105",
+            "mu1"
+          ],
+          "to": [
+            "m100",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "em105",
+            "be1"
+          ],
+          "to": [
+            "b101",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "em105",
+            "th1"
+          ],
+          "to": [
+            "t102",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "one_minus_sq115",
+            "d"
+          ],
+          "to": [
+            "mul116",
+            "b"
+          ]
+        },
+        {
+          "from": [
+            "v112",
+            "out"
+          ],
+          "to": [
+            "one_minus_sq115",
+            "a"
+          ]
+        },
+        {
+          "from": [
+            "x118",
+            "out"
+          ],
+          "to": [
+            "m117",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "m117",
+            "out"
+          ],
+          "to": [
+            "sub120",
+            "a"
+          ]
+        },
+        {
+          "from": [
+            "sub120",
+            "d"
+          ],
+          "to": [
+            "e119",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "e119",
+            "out"
+          ],
+          "to": [
+            "mul116",
+            "a"
+          ]
+        },
+        {
+          "from": [
+            "v112",
+            "out"
+          ],
+          "to": [
+            "sub120",
+            "b"
+          ]
+        },
+        {
+          "from": [
+            "mul116",
+            "d"
+          ],
+          "to": [
+            "em105",
+            "g"
+          ]
+        },
+        {
+          "from": [
+            "em105",
+            "f"
+          ],
+          "to": [
+            "v112",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "m103",
+            "out"
+          ],
+          "to": [
+            "em106",
+            "mu"
+          ]
+        },
+        {
+          "from": [
+            "t105",
+            "out"
+          ],
+          "to": [
+            "em106",
+            "th"
+          ]
+        },
+        {
+          "from": [
+            "b104",
+            "out"
+          ],
+          "to": [
+            "em106",
+            "be"
+          ]
+        },
+        {
+          "from": [
+            "em106",
+            "mu1"
+          ],
+          "to": [
+            "m103",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "em106",
+            "be1"
+          ],
+          "to": [
+            "b104",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "em106",
+            "th1"
+          ],
+          "to": [
+            "t105",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "em106",
+            "f"
+          ],
+          "to": [
+            "v107",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "v107",
+            "out"
+          ],
+          "to": [
+            "em105",
+            "fa"
+          ]
+        },
+        {
+          "from": [
+            "em105",
+            "eps"
+          ],
+          "to": [
+            "e108",
+            "in"
+          ]
+        },
+        {
+          "from": [
+            "one_minus_sq109",
+            "d"
+          ],
+          "to": [
+            "mul110",
+            "b"
+          ]
+        },
+        {
+          "from": [
+            "e108",
+            "out"
+          ],
+          "to": [
+            "mul110",
+            "a"
+          ]
+        },
+        {
+          "from": [
+            "v107",
+            "out"
+          ],
+          "to": [
+            "one_minus_sq109",
+            "a"
+          ]
+        },
+        {
+          "from": [
+            "mul110",
+            "d"
+          ],
+          "to": [
+            "em106",
+            "g"
+          ]
+        },
+        {
+          "from": [
+            "e108",
+            "out"
+          ],
+          "to": [
+            "mon111",
+            "v"
+          ]
+        },
+        {
+          "from": [
+            "e119",
+            "out"
+          ],
+          "to": [
+            "mon101",
+            "v"
+          ]
+        }
+      ],
+      "lrMu": 0.05,
+      "lrT": 0.001,
+      "lrB": 0.001,
+      "nInfer": 10,
+      "seed": 41,
+      "wTop": 0.02,
+      "fixed": true
+    }
+  },
+];
+
 /* ── src/ui/store.js ── */
 // 这个模块负责：全局状态容器 S、统一的变更通知（onChange / notify），以及选中集、「名字唯一化」这两个最小的状态读写工具。
 
 // 所有会被多个模块读写的状态都放这里，别的模块一律通过 S.xxx 访问。
 const S = {
-  spec: PC.presetBasic([64, 1024]),   // 图纸（节点 + 连线 + 超参）
+  spec: JSON.parse(JSON.stringify(DRAWINGS[0].spec)),   // 图纸（节点 + 连线 + 超参）；默认 = 内置示例
   view: { x: 40, y: 20, k: 0.8 },     // 画布视图
   sel: null,              // 主选中（检视器看这个）
   selSet: new Set(),      // 当前选中的全部节点
@@ -1430,9 +1998,44 @@ function geom(n) {
   return {
     w, h,
     info,
-    ins: ins.map((p, i) => ({ k: p.k, name: p.name || p.k, opt: !!p.optional, ...pin(i, 'in') })),
-    outs: outs.map((p, i) => ({ k: p.k, name: p.name || p.k, ...pin(ins.length + i, 'out') })),
+    ins: ins.map((p, i) => ({ k: p.k, name: p.name || p.k, optional: !!p.optional, write: !!p.write, ...pin(i, 'in') })),
+    outs: outs.map((p, i) => ({ k: p.k, name: p.name || p.k, optional: !!p.optional, write: !!p.write, ...pin(ins.length + i, 'out') })),
   };
+}
+
+// 端口颜色 —— 端口和连线两端颜色的唯一来源。规则分两段：
+//
+// 1) 没接线：
+//      必需输入口 → need 红（组件报错会追到这个口，提醒你接线）
+//      其余        → 不着色（灰环 + 全黑小圆），可选口没接是正常状态，不该占用颜色
+// 2) 接了线：按「方向」上色
+//      source 黄 = 输出口（组件右边，值从这里流出）
+//      sink   蓝 = 输入口（组件左边，值流进这个组件）
+//    所以每条连线天然是「黄 → 蓝」，靠近源那头黄、靠近汇那头蓝，方向不用箭头也看得懂。
+//
+// 颜色只由「方向」决定，与这个口是谁无关，因此自定义节点不需要为配色写任何特判。
+function roleOf(n, p, dir) {
+  const c = PC.LIBMAP[n.type] || {};
+  if (!isConnected(n.id, p.k, dir)) {
+    return (dir === 'in' && !p.optional && !c.state && !c.view) ? 'need' : '';
+  }
+  return dir === 'out' ? 'source' : 'sink';
+}
+
+// 端口当前有没有接线（渲染用它决定实心还是空心）
+function isConnected(nodeId, port, dir) {
+  return S.spec.edges.some(e => (dir === 'in'
+    ? (e.to[0] === nodeId && e.to[1] === port)
+    : (e.from[0] === nodeId && e.from[1] === port)));
+}
+function pinRole(n, p, dir) { return roleOf(n, p, dir); }
+// 给连线用：只知道节点 id 和端口名
+function portRole(nodeId, port, dir) {
+  const n = S.spec.nodes.find(x => x.id === nodeId);
+  if (!n) return '';
+  const g = geom(n);
+  const p = (dir === 'in' ? g.ins : g.outs).find(x => x.k === port);
+  return p ? roleOf(n, p, dir) : '';
 }
 
 function pinPos(nodeId, port, dir) {
@@ -1452,29 +2055,83 @@ function bez(a, b) {
 
 /* ── src/ui/wires.js ── */
 // 这个模块负责：连线（贝塞尔）的绘制与删除、剪刀的命中判定，以及画布上那条临时剪线轨迹 #cutpath。
+//
+// 连线的颜色是「有向」的：每条线都从中点附近由黄过渡到蓝——黄的那头是输出口（源），
+// 蓝的那头是输入口（汇），所以不画箭头也能看出值往哪边走。方向定义见 geometry.js 的 roleOf。
+// 过渡带刻意做得很窄（42% → 58%）：既不是生硬的硬切，也不会在中间拖出一段发灰的混色。
+
+const COLOR = {
+  sink: '#4a7fb5',    // 蓝：输入口（值流进这个组件）
+  source: '#e0a458',  // 黄：输出口（值从这个组件流出）
+  need: '#ef7c74',    // 红：必需但没连（线画出来时不会是它，留作兜底）
+  '': '#48566b',      // 灰：端口未知
+};
+
+const WIDTH = 1.8;
+const WIDTH_HOT = 3.2;
+const BAND_FROM = 0.42;   // 过渡带的起点（占整条线长的比例）
+const BAND_TO = 0.58;     // 过渡带的终点
+
+// 一条线一个渐变；坐标系直接用世界坐标（端点和线都在世界坐标里）
+function makeGradient(id, a, b, c1, c2) {
+  const g = svgEl('linearGradient');
+  g.setAttribute('id', id);
+  g.setAttribute('gradientUnits', 'userSpaceOnUse');
+  g.setAttribute('x1', a.x); g.setAttribute('y1', a.y);
+  g.setAttribute('x2', b.x); g.setAttribute('y2', b.y);
+  const stops = [
+    [0, c1, 0.9],
+    [BAND_FROM, c1, 0.9],
+    [BAND_TO, c2, 0.95],
+    [1, c2, 0.95],
+  ];
+  for (const [offset, color, opacity] of stops) {
+    const st = svgEl('stop');
+    st.setAttribute('offset', String(offset));
+    st.setAttribute('stop-color', color);
+    st.setAttribute('stop-opacity', String(opacity));
+    g.appendChild(st);
+  }
+  return g;
+}
+
+function edgeColor(nodeId, port, dir) {
+  return COLOR[portRole(nodeId, port, dir)] || COLOR[''];
+}
 
 function drawWires() {
   const svg = $('#wires');
   svg.innerHTML = '';
+  const defs = svgEl('defs');
+  svg.appendChild(defs);
+
+  let index = 0;
   for (const e of S.spec.edges) {
     const a = pinPos(e.from[0], e.from[1], 'out');
     const b = pinPos(e.to[0], e.to[1], 'in');
     if (!a || !b) continue;
-    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+
+    const gid = `lg${index++}`;
+    const c1 = edgeColor(e.from[0], e.from[1], 'out');
+    const c2 = edgeColor(e.to[0], e.to[1], 'in');
+    defs.appendChild(makeGradient(gid, a, b, c1, c2));
+
+    const p = svgEl('path');
     p.setAttribute('d', bez(a, b));
-    const isState = /^[MTBE]$/.test(e.to[1]) || e.to[1] === 'in';
-    p.setAttribute('stroke', e.to[1] === 'in' ? '#e0a458' : '#4a7fb5');
-    p.setAttribute('stroke-width', '1.6');
+    p.setAttribute('stroke', `url(#${gid})`);
+    p.setAttribute('stroke-width', String(WIDTH));
     p.setAttribute('fill', 'none');
-    p.setAttribute('opacity', '.85');
-    if (e.to[1] === 'in') p.setAttribute('stroke-dasharray', '5 3');
     p.classList.add('hit');
     p.__edge = e;
+
     if (S.mode === 'scissor') p.style.pointerEvents = 'none';
-    p.addEventListener('mouseenter', () => { if (S.mode !== 'scissor') p.setAttribute('stroke-width', '3'); });
-    p.addEventListener('mouseleave', () => p.setAttribute('stroke-width', '1.6'));
+    p.addEventListener('mouseenter', () => {
+      if (S.mode !== 'scissor') p.setAttribute('stroke-width', String(WIDTH_HOT));
+    });
+    p.addEventListener('mouseleave', () => p.setAttribute('stroke-width', String(WIDTH)));
     p.addEventListener('click', ev => { ev.stopPropagation(); removeEdge(e); });
     p.addEventListener('dblclick', ev => { ev.stopPropagation(); removeEdge(e); });
+
     svg.appendChild(p);
   }
 }
@@ -1500,17 +2157,16 @@ function scissorCut(x1, y1, x2, y2) {
     if (!p.__edge) continue;
     const len = p.getTotalLength();
     const step = Math.max(4, Math.min(10, len / 40));
-    let hit = false;
     for (let d = 0; d <= len; d += step) {
       const q = p.getPointAtLength(d);
       // 世界坐标 → 画布坐标
       const sx = q.x * S.view.k + S.view.x, sy = q.y * S.view.k + S.view.y;
-      if (segDist(sx, sy, x1, y1, x2, y2) < 5) { hit = true; break; }
-    }
-    if (hit) {
-      S.spec.edges = S.spec.edges.filter(e => e !== p.__edge);
-      p.remove();
-      cut++;
+      if (segDist(sx, sy, x1, y1, x2, y2) < 5) {
+        S.spec.edges = S.spec.edges.filter(e => e !== p.__edge);
+        p.remove();
+        cut++;
+        break;
+      }
     }
   }
   return cut;
@@ -1521,10 +2177,12 @@ function cutBegin(st, x, y) {
   const drag = { kind: 'scissor', st, pts: [[x, y]], cut: 0 };
   let cp = $('#cutpath');
   if (!cp) {
-    cp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    cp = svgEl('path');
     cp.id = 'cutpath';
-    cp.setAttribute('stroke', '#ef7c74'); cp.setAttribute('stroke-width', '1.5');
-    cp.setAttribute('fill', 'none'); cp.setAttribute('stroke-dasharray', '4 3');
+    cp.setAttribute('stroke', '#ef7c74');
+    cp.setAttribute('stroke-width', '1.5');
+    cp.setAttribute('fill', 'none');
+    cp.setAttribute('stroke-dasharray', '4 3');
     cp.setAttribute('pointer-events', 'none');
     $('#wires').appendChild(cp);
   }
@@ -1543,7 +2201,8 @@ function cutUpdate(drag, x, y) {
 }
 
 function cutEnd(drag) {
-  const cp = $('#cutpath'); if (cp) cp.remove();
+  const cp = $('#cutpath');
+  if (cp) cp.remove();
   return drag.cut;
 }
 
@@ -1628,7 +2287,10 @@ const HELP = `操作
 
 图
 1. 组件库在左边：点「组件」展开/收起；点一下组件 = 放到画布中央，也可以直接拖进来。
-2. 连线：从组件右侧的圆点拖到另一个组件左侧的圆点。
+2. 连线：从组件右侧的圆点拖到另一个组件左侧的圆点。线是有向的——颜色在中点附近从源端色过渡到目标端色：
+   靠近源端是源端口的颜色，靠近目标端是目标端口的颜色。端口颜色只看方向、且接线后才上色：
+   黄 = 输出口（组件右边，值流出去）；蓝 = 输入口（组件左边，值流进来）。
+   没接线时不显色（灰环 + 黑心），只有"必需但没连"才标红。所以每条线都是"黄一头、蓝一头"。
 3. 状态组件（x / 后验 μ / 权重 θ / 偏置 β / 误差 ε / 中间量）的名字和形状都自己定：
    选中后在右边「检视器」里改「名称」「形状 r × c」。连上算子之后，算子会按你的形状
    自动校验，形状对不上会在组件上直接标红报错。
@@ -1770,6 +2432,11 @@ function refreshSel() {
 }
 
 // ───────────────────────── 重绘 ─────────────────────────
+// 端口画什么颜色（判定在 geometry.js 的 roleOf，这里只用结果）：
+//   sink   —— 蓝：输入口（组件左边，值流进这个组件）
+//   source —— 黄：输出口（组件右边，值从这个组件流出）
+//   need   —— 红：没连，但它是必需的输入口（算子 a/b、EM 的 μ/θ）
+// 另外 open class 标出"还没接线"：未接线画空心圈，颜色不变。
 function rebuild() {
   // 只画图：rt 由 resetRun() 负责 lower + 初始化。
   // （这里曾经重新 lower 一次，等于把训练好的状态清零，表现为 M[1]/T[1] 全部塌成 0）
@@ -1792,18 +2459,33 @@ function rebuild() {
                    `<span class="tag">${n.type === 'EM' ? 'MACRO' : (c.state ? 'STATE' : 'OP')}</span>`;
     d.appendChild(hd);
     const bd = el('div', 'bd');
+
+    // 一个端口的 HTML：连接点 + 名称。颜色 class 来自 geometry 的 roleOf（按方向、且只在接线后上色），
+    // linked 表示已接线——已接线时小圆填成"比环暗一点"的同色，没接线时小圆保持全黑。
+    // 输入口把连接点放行首、输出口放行尾，和「左进右出」的画法一致。
+    const portHTML = (n2, p, dir) => {
+      const role = pinRole(n2, p, dir);
+      const linked = isConnected(n2.id, p.k, dir);
+      const cls = 'pin' + (role ? ' ' + role : '') + (linked ? ' linked' : '');
+      const tip = role === 'need' ? ' title="这个输入必需，还没连"'
+                : linked ? '' : ' title="还没接线"';
+      const pinTag = `<span class="${cls}" data-node="${n2.id}" data-port="${p.k}" data-dir="${dir}"` +
+                     ` style="top:4.5px"${tip}></span>`;
+      const label = `<span class="lb">${p.name}</span>`;
+      return dir === 'in' ? pinTag + label : label + pinTag;
+    };
+
     for (const p of g.ins) {
       const r = el('div', 'port in');
-      r.innerHTML = `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="in" style="top:4.5px"></span>` +
-                    `<span class="lb">${p.name}</span>`;
+      r.innerHTML = portHTML(n, p, 'in');
       bd.appendChild(r);
     }
     for (const p of g.outs) {
       const r = el('div', 'port out');
-      r.innerHTML = `<span class="lb">${p.name}</span>` +
-                    `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="out" style="top:4.5px"></span>`;
+      r.innerHTML = portHTML(n, p, 'out');
       bd.appendChild(r);
     }
+
     for (const line of g.info) {
       const r = el('div', 'note', line);
       bd.appendChild(r);
@@ -1904,7 +2586,10 @@ function stepOnce(dt) {
   if (S.it % nI === 0 && !fixed) S.sampleIdx = (S.sampleIdx + 1) % (S.data ? S.data.length : 1);
   const fe = PC.freeEnergy(S.rt.pr, S.spec);
   S.lastF = fe.F;
-  const e0 = fe.perLayer.find(p => p.name === 'E0');
+  // ‖ε₀‖²：取层级最低的那个误差状态。名字可能是 E0 / E_0 / err0，
+  // 所以按「名字里的数字最小」来挑，而不是硬匹配 'E0'。
+  const idx = p => { const m = String(p.name).match(/(\d+)\s*$/); return m ? +m[1] : 1e9; };
+  const e0 = fe.perLayer.slice().sort((a, b) => idx(a) - idx(b) || a.name.localeCompare(b.name))[0];
   S.lastE0 = e0 ? e0.e : 0;
   S.hist.push(Math.max(1e-9, S.lastF));
 }
@@ -2203,7 +2888,6 @@ function afterLoad() {
 
 function loadSpec(sp, name) {
   S.spec = JSON.parse(JSON.stringify(sp));
-  if (!S.spec.dims) S.spec.dims = [64];
   if (name !== undefined) {
     S.curName = name;
     document.title = 'pc-studio' + (name ? ' · ' + name : ' · 预测编码图编辑器');
@@ -2226,12 +2910,12 @@ function bindFilePicker() {
 /* ── src/ui/menu.js ── */
 // 这个模块负责：顶栏「文件 / 工具」菜单与模式（选择 / 剪刀）切换，以及新建图纸、切换示例图纸。
 
-// 预设（示例图纸只在「文件 → 示例图纸」里）
-const DEMO_PRESETS = [
-  { id: 'basic', name: '基本模型（2 层 + EM）', make: () => PC.presetBasic([64, 1024]) },
-  { id: 'deep', name: '三层（EM 串联）', make: () => PC.presetDeep([64, 512, 256]) },
-  { id: 'single', name: '只有输入层（退化）', make: () => PC.presetSingle([64]) },
-];
+// 示例图纸：内容来自 src/engine/drawings.js（由 studio/import-drawing.mjs 生成），
+// 只在「文件 → 示例图纸」里出现。想换成自己的图纸：
+//     node studio/import-drawing.mjs 你的图纸.json && node studio/build.mjs
+const DEMO_PRESETS = DRAWINGS.map(d => ({
+  id: d.id, name: d.name, make: () => JSON.parse(JSON.stringify(d.spec)),
+}));
 
 // 工具模式：'select' 默认，'scissor' 剪刀（左键划动剪线）
 function setMode(m) {
@@ -2246,7 +2930,7 @@ function closeToolMenu() { $('#toolmenu').classList.remove('on'); }
 
 function newDrawing() {
   S.spec = {
-    v: 1, dims: [64], nodes: [], edges: [],
+    nodes: [], edges: [],
     lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, fixed: true,
   };
   S.curFile = null; S.curName = null;
@@ -2282,11 +2966,21 @@ function bindTopBar() {
     else if (a === 'save') saveCurrent();
     else if (a === 'saveas') saveAs();
     else if (a === 'open') openFile();
-    else if (a === 'ex0') loadPreset(0);
-    else if (a === 'ex1') loadPreset(1);
-    else if (a === 'ex2') loadPreset(2);
+    else if (a === 'ex') loadPreset(+mi.dataset.i);
     else if (a === 'json') $('#btn-json').click();
     else if (a === 'cpp') $('#btn-cpp').click();
+  });
+
+  // 示例图纸列表按 drawings.js 生成（不用改 index.html）
+  const ex = $('#exlist');
+  ex.innerHTML = '';
+  DEMO_PRESETS.forEach((p, i) => {
+    const d = document.createElement('div');
+    d.className = 'mi';
+    d.dataset.act = 'ex';
+    d.dataset.i = i;
+    d.textContent = p.name;
+    ex.appendChild(d);
   });
 
   // 工具菜单
@@ -2727,9 +3421,12 @@ function runSelftest() {
     log('palette-collapsed', !document.querySelector('#lc-body').classList.contains('open'));
     document.querySelector('#lc-head').click();
 
-    // 7) 监视组件：拖一个上去，接到 E0，出方阵
+    // 7) 监视组件：拖一个上去，接到最底层的误差状态，出方阵
+    //    不写死名字（图纸里的状态可能叫 E0 / E_0 / err0），按「名字末尾数字最小」挑。
     const mon = addNode('MON', { x: 980, y: 640 });
-    connect('E0', 'out', mon.id, 'v');
+    const tail = s => { const m = String(s).match(/(\d+)\s*$/); return m ? +m[1] : 1e9; };
+    const eNode = S.spec.nodes.filter(n => n.type === 'E').sort((a, b) => tail(a.name) - tail(b.name))[0];
+    if (eNode) connect(eNode.id, 'out', mon.id, 'v');
     log('mon-cells', document.querySelectorAll(`.mon[data-mon="${mon.id}"] i`).length, 'tensor', (S.rt.views[mon.id] || {}).name);
 
     // 8) 改形状 → 校验报错
@@ -2754,13 +3451,38 @@ function runSelftest() {
     log('pasted', nBefore, '->', S.spec.nodes.length, 'sel', S.selSet.size);
     setToast(oldToast);
 
-    // 10) 示例图纸从菜单切
+    // 10) 示例图纸从菜单切（菜单项由 engine/drawings.js 生成，这里验证"列表 + 点击可用"）
     document.querySelector('#btn-file').click();
-    document.querySelector('#filemenu .mi[data-act="ex1"]').click();
-    log('example3-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length);
-    document.querySelector('#btn-file').click();
-    document.querySelector('#filemenu .mi[data-act="ex2"]').click();
-    log('example1-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length);
+    const exItems = document.querySelectorAll('#filemenu #exlist .mi');
+    exItems[0].click();
+    log('example-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', S.spec.nodes.length,
+        'items', exItems.length);
+
+    // 11) 端口颜色：语义色（黄=落进状态缓冲区 / 蓝=算出来的值），没连的必需端口标红
+    const pinOf = (nid, k, dir) =>
+      document.querySelector(`.node[data-id="${nid}"] .port.${dir} .pin[data-port="${k}"]`);
+    const aNode = addNode('ADD', { x: 60, y: 800 });
+    rebuild();
+    log('pin-need', (pinOf(aNode.id, 'a', 'in') || {}).className);
+    const e = S.spec.edges.find(x => x.to[1] === 'in');
+    log('pin-in', (pinOf(e.to[0], e.to[1], 'in') || {}).className);
+    log('pin-out', (pinOf(e.from[0], e.from[1], 'out') || {}).className);
+
+    // 12) 端口着色审计：接线的口必须上色（蓝 in / 黄 out），没接的只能是灰或红，
+    //     不允许出现"接了线却不着色"或"没接却着色"的口
+    const pins = [...document.querySelectorAll('.pin')];
+    const cnt = k => pins.filter(p => p.classList.contains(k)).length;
+    const linkedNoColor = pins.filter(p => p.classList.contains('linked') &&
+      !p.classList.contains('sink') && !p.classList.contains('source'));
+    const unlinkedColored = pins.filter(p => !p.classList.contains('linked') &&
+      (p.classList.contains('sink') || p.classList.contains('source')));
+    log('pin-audit', 'total', pins.length, 'in', cnt('sink'), 'out', cnt('source'),
+        'need', cnt('need'), 'gray', pins.length - cnt('sink') - cnt('source') - cnt('need'),
+        'bad', linkedNoColor.length + unlinkedColored.length);
+    // #needshot：把这个没接线的 ADD 留在画布上，方便截图看「必需端口标红」
+    if (location.hash.includes('needshot')) { aNode.pos.y = 620; rebuild(); return; }
+    S.spec.nodes = S.spec.nodes.filter(n => n.id !== aNode.id);
+    rebuild();
 
     log('canFS', canFS, 'save-as-test', typeof saveTextAs);
 
@@ -2846,8 +3568,7 @@ window.addEventListener('load', () => {
   if (location.hash.includes('menu')) setTimeout(() => $('#filemenu').classList.add('on'), 200);
   if (location.hash.includes('tools')) setTimeout(() => $('#toolmenu').classList.add('on'), 200);
   if (location.hash.includes('scissor')) setTimeout(() => setMode('scissor'), 220);
-  if (location.hash.includes('deep')) loadPreset(1);
-  else if (location.hash.includes('single')) loadPreset(2);
+  if (location.hash.includes('deep')) loadPreset(0);
   const h = location.hash.match(/run=(\d+)/);
   if (h) {
     const n = +h[1];

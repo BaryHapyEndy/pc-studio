@@ -52,8 +52,7 @@ window.addEventListener('load', () => {
   if (location.hash.includes('menu')) setTimeout(() => $('#filemenu').classList.add('on'), 200);
   if (location.hash.includes('tools')) setTimeout(() => $('#toolmenu').classList.add('on'), 200);
   if (location.hash.includes('scissor')) setTimeout(() => setMode('scissor'), 220);
-  if (location.hash.includes('deep')) loadPreset(1);
-  else if (location.hash.includes('single')) loadPreset(2);
+  if (location.hash.includes('deep')) loadPreset(0);
   const h = location.hash.match(/run=(\d+)/);
   if (h) {
     const n = +h[1];

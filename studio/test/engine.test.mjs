@@ -67,7 +67,7 @@ test('run(phase) 能截断：只跑到推理段就不会动 θ', () => {
 
 test('形状不匹配：只报一条，文案不变', () => {
   const spec = {
-    dims: [64], lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 10, seed: 1,
+    lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 10, seed: 1,
     nodes: [
       { id: 'a', type: 'V', name: 'a', shape: { r: 1, c: 8 }, pos: {} },
       { id: 'b', type: 'V', name: 'b', shape: { r: 6, c: 4 }, pos: {} },

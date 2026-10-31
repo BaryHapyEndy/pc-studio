@@ -89,7 +89,6 @@ export function afterLoad() {
 
 export function loadSpec(sp, name) {
   S.spec = JSON.parse(JSON.stringify(sp));
-  if (!S.spec.dims) S.spec.dims = [64];
   if (name !== undefined) {
     S.curName = name;
     document.title = 'pc-studio' + (name ? ' · ' + name : ' · 预测编码图编辑器');

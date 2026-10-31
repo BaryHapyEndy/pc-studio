@@ -51,7 +51,14 @@ int main(int argc, char** argv) {
     gen_model::init(m, 42);
     Program& pr = m.pr;
 
-    Stream st(gen_model::D[0]);
+    // 输入宽度从模型里读：找名为 "x" 的那个状态张量，不再依赖生成头里的层宽常量
+    //（生成的头只描述"算什么"，不描述"多宽"）
+    const int inW = [&] {
+        for (const auto& e : pr.layout()) if (e.is_state && e.name == "x") return int(e.s.c);
+        return 64;
+    }();
+
+    Stream st(inW);
     const int nInfer = 20;
 
     std::printf("# ops=%zu arena=%zu B (state %zu + temp %zu)\n", pr.num_ops(), pr.bytes(),
@@ -62,7 +69,7 @@ int main(int argc, char** argv) {
     for (int it = 0; it < steps; ++it) {
         if (it % nInfer == 0) {
             st.next();
-            for (int i = 0; i < gen_model::D[0]; ++i) x[i] = st.v[size_t(i)];
+            for (int i = 0; i < inW; ++i) x[i] = st.v[size_t(i)];
         }
         pr.run((it % nInfer) == nInfer - 1 ? PH_LEARN : PH_INFER);
         if (it % every == 0 || it == steps - 1) {
