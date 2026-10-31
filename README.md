@@ -1,13 +1,3 @@
-下面是修改后的 `README.md`。主要改动四处：
-
-1. 开头命令块加入 `./launch.sh`（并注明等价命令）；
-2. 第 1 节目录表新增 `launch.sh` 一行；
-3. 第 3 节开头补「三种打开方式」说明；
-4. 第 4 节开发命令处顺带提一句 `launch.sh`。
-
----
-
-````markdown
 # pc-studio v1.0.0
 
 给「预测编码 + 在线学习」这类算法做实验的小引擎：**在图上搭结构 → 自动生成 schedule → 跑 / 导出 C++**。
@@ -26,7 +16,6 @@ open pc-studio.html             # 图形界面：单文件构建产物，双击�
 # 等价于：python3 -m http.server 8000 --directory studio
 #         然后浏览器开 http://localhost:8000/index.html
 ```
-````
 
 ---
 
