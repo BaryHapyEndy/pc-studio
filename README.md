@@ -1,25 +1,28 @@
-# pc-studio v1.0.0
+# pc-studio
 
-给「预测编码 + 在线学习」这类算法做实验的小引擎：**在图上搭结构 → 自动生成 schedule → 跑 / 导出 C++**。
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)](#)
+[![C++17](https://img.shields.io/badge/C%2B%2B-17-blue.svg)](#)
 
-两条硬指标：
+> 面向「预测编码 + 在线学习」算法的实验引擎：**在图上搭建结构 → 自动生成 schedule → 运行 / 导出 C++**。
 
-- **改算法只需要改图**——不用重写 C++，不用手算缓冲区偏移。
-- **界面里的数和导出的 C++ 逐位对得上**——同一张图两边跑 2000 步，自由能一致到 7 位有效数字。
+项目围绕两个核心设计目标构建：
+
+- **算法改动只发生在图上** —— 无需重写 C++，也无需手算缓冲区偏移。
+- **界面与导出的 C++ 逐位一致** —— 同一张图在两侧各跑 2000 步，自由能一致到 7 位有效数字。
+
+## 快速开始
 
 ```bash
 ./build.sh                      # 编译（macOS / Linux 均可）
 ./build/schedule_demo           # 算子层：跑一份生成器产出的 schedule
 ./build/pc_basic 2000 500       # 图引擎：两层基本模型，打印 F / ε₀ / ε₁
-open pc-studio.html             # 图形界面：单文件构建产物，双击也行
-./launch.sh                     # 或者起本地服务器打开 studio/ 源码版
+open pc-studio.html             # 图形界面：单文件构建产物，双击亦可
+./launch.sh                     # 或起本地服务器打开 studio/ 源码版
 # 等价于：python3 -m http.server 8000 --directory studio
-#         然后浏览器开 http://localhost:8000/index.html
+#         然后浏览器访问 http://localhost:8000/index.html
 ```
 
----
-
-## 1. 目录
+## 目录结构
 
 | 路径                         | 说明                                                                                                                                  |
 | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------- |
@@ -31,9 +34,9 @@ open pc-studio.html             # 图形界面：单文件构建产物，双击�
 | `examples/pc_basic.cpp`      | 用 `engine/pc.hpp` 搭两层模型并训练                                                                                                   |
 | `studio/`                    | 图编辑器源码（ES 模块）：`index.html` · `styles/` · `src/engine/`(11 个模块) · `src/ui/`(18 个) · `test/` · `build.mjs`(打包成单文件) |
 | `tools/`                     | `schedgen.js`(schedule 编译器) · `emit.js`(把 schedule 落成 C++ 头)                                                                   |
-| `pc-studio.html`             | **主入口**：图形界面（由 `node studio/build.mjs` 从 `studio/` 打出来的单文件，不要手改）                                              |
+| `pc-studio.html`             | **主入口**：图形界面（由 `node studio/build.mjs` 从 `studio/` 打出的单文件，请勿手改）                                                |
 | `launch.sh`                  | 在 `studio/` 上起本地 HTTP 服务的薄包装（macOS / Linux：`./launch.sh`，等价于 `python3 -m http.server 8000 --directory studio`）      |
-| `reports/`                   | 两轮实验报告；`reports/data/` 是测量出来的 CSV                                                                                        |
+| `reports/`                   | 两轮实验报告；`reports/data/` 为测量得到的 CSV                                                                                        |
 | `CMakeLists.txt`             | 唯一构建入口（`build.sh` 只是它的薄包装）                                                                                             |
 
 ```
@@ -41,7 +44,7 @@ core/      说"算什么、在哪算"        ← 手写或生成器都能直接�
 engine/    说"什么时候算、内存怎么复用"  ← 图形界面用它
 ```
 
-## 2. 两个层次，为什么都要在
+## 两层架构
 
 |          | `core/`（算子层）                   | `engine/pc.hpp`（图引擎）                  |
 | -------- | ----------------------------------- | ------------------------------------------ |
@@ -50,14 +53,11 @@ engine/    说"什么时候算、内存怎么复用"  ← 图形界面用它
 | 次序     | 你给的 `std::vector<Op>` 顺序       | 按 `PH_PREDICT → PH_INFER → PH_LEARN` 排序 |
 | 谁来驱动 | 生成器（`tools/schedgen.js`）或手写 | 图编辑器（`studio/src/engine/`）           |
 
-算子层的价值是**下限可控**：生成的 schedule 直接是 `Op[]`，没有解释器、没有虚函数，
-arena 大小、每个 op 的形状都是编译期定好的常量。图引擎的价值是**上限**：形状检查、相位、
-内存规划、跨语言一致性都在这一层解决。
+算子层的价值在于**下限可控**：生成的 schedule 直接就是 `Op[]`，没有解释器、没有虚函数，arena 大小与每个 op 的形状都是编译期常量。图引擎的价值在于**上限**：形状检查、相位、内存规划、跨语言一致性都在这一层解决。
 
-### 算子层的四个"融合"扩展
+### 算子层的融合扩展
 
-相对最早的手写版本，`core/executor.hpp` 多了三样东西（`core/operation.hpp` 里对应加了
-`FLAG_ACC` 与两个算子）：
+相比最早的手写版本，`core/executor.hpp` 增加了以下扩展（`core/operation.hpp` 中相应加入 `FLAG_ACC` 与两个算子）：
 
 | 扩展                 | 作用                                              | 效果                             |
 | -------------------- | ------------------------------------------------- | -------------------------------- |
@@ -66,16 +66,15 @@ arena 大小、每个 op 的形状都是编译期定好的常量。图引擎的�
 | `PREDICT_ACT`        | 原地：`row0 = tanh(row0+B)`，其余行 `*= 1-row0²`  | 预测头 7 个 op → 1 个            |
 | `DIFFUSE`            | 原地：`state[k] += dt*state[k+1]`，末行 `*= -0.1` | 扩散 3 个 op + 1 块临时区 → 1 个 |
 
-## 3. 图形界面
+## 图形界面
 
-三种打开方式，功能完全一致，按需选一种：
+三种打开方式，功能完全一致，按需选择：
 
-1. **双击 `pc-studio.html`**——构建产物，`file://` 直接打开，单文件零依赖；
-2. **`python3 -m http.server 8000 --directory studio`**——直接在源码目录起服务，
-   浏览器开 `http://localhost:8000/index.html`，改 `studio/` 下的源文件刷新即生效，无需构建；
-3. **`./launch.sh`**——第 2 条命令的包装脚本（macOS / Linux），`./launch.sh` 或双击运行均可。
+1. **双击 `pc-studio.html`** —— 构建产物，`file://` 直接打开，单文件零依赖；
+2. **`python3 -m http.server 8000 --directory studio`** —— 直接在源码目录起服务，浏览器访问 `http://localhost:8000/index.html`，修改 `studio/` 下的源文件后刷新即生效，无需构建；
+3. **`./launch.sh`** —— 第 2 条命令的包装脚本（macOS / Linux），`./launch.sh` 或双击运行均可。
 
-左侧组件库拖到画布 → 端口连线 → 点「运行 ▶」；「文件 → 导出 C++」得到用 `engine/pc.hpp` 的代码。
+将左侧组件库拖到画布 → 端口连线 → 点「运行 ▶」；「文件 → 导出 C++」即可得到使用 `engine/pc.hpp` 的代码。
 
 | 操作               | 作用                                               |
 | ------------------ | -------------------------------------------------- |
@@ -88,17 +87,20 @@ arena 大小、每个 op 的形状都是编译期定好的常量。图引擎的�
 | ⌘C · ⌘V · Delete   | 复制（只带两头都在选区内的连线）/ 粘贴 / 删除      |
 | V · S              | 选择 / **剪刀**（按住左键划过连线即断）            |
 
-组件：**状态**（输入 x、后验 μ、权重 θ、偏置 β、误差 ε、中间量——名字和形状都自己定）、
-**监视**（把张量画成 ⌈√n⌉ 列的方阵热力图）、**算子**（MATMUL_NN/NT/TN、ADD、SUB、MUL、SCALE、
-TANH、ONE_MINUS_SQ、AXPY、CLAMP）、**集成**（EM：接 μ 与 θ，一次做完两层间的推理 + 学习）。
+组件类型：
 
-三条约定（看懂任何一张图只需要这三条）：
+- **状态**（输入 x、后验 μ、权重 θ、偏置 β、误差 ε、中间量——名字和形状均可自定义）
+- **监视**（把张量画成 ⌈√n⌉ 列的方阵热力图）
+- **算子**（MATMUL_NN/NT/TN、ADD、SUB、MUL、SCALE、TANH、ONE_MINUS_SQ、AXPY、CLAMP）
+- **集成**（EM：接 μ 与 θ，一次做完两层间的推理 + 学习）
+
+三条核心约定（理解任何一张图只需这三条）：
 
 1. **状态组件的左端口是「写」，右端口是「读」**：算子输出接到 `in` ⇒ 原地写那块状态。
 2. **`μ_l` 是 `1 × D_l` 的行向量**，是第 l 层的后验；**高层预测低层**。
 3. **连线只有两种语义**：数据（实线）与写回 / 别名（虚线）。算子由组件决定，不由连线决定。
 
-## 4. 工具
+## 工具链
 
 ```bash
 node tools/emit.js                 # 重新生成 gen/sched_comp1.hpp（顺便打印各配置规模）
@@ -107,22 +109,20 @@ node --test "studio/test/*.test.mjs"   # 引擎单测（11 条，零依赖，nod
 node studio/dump_js.mjs 2000 500   # 在 node 里跑同一张图，用于和 C++ 对数
 ```
 
-对数：`node studio/dump_js.mjs 2000 500 > /tmp/js.txt` 与 `./build/pc_basic 2000 500 > /tmp/cpp.txt`
-逐行应一致（末几位差来自 `sin/cos` 与 float32 舍入）。
+跨语言对数：`node studio/dump_js.mjs 2000 500 > /tmp/js.txt` 与 `./build/pc_basic 2000 500 > /tmp/cpp.txt` 逐行应一致（末几位差异来自 `sin/cos` 与 float32 舍入）。
 
 ### 开发界面
 
-`pc-studio.html` 是**构建产物**，改界面请改 `studio/` 里的源文件，再跑一次 `node studio/build.mjs`：
+`pc-studio.html` 是**构建产物**，修改界面请改 `studio/` 里的源文件，再跑一次 `node studio/build.mjs`：
 
 ```bash
-python3 -m http.server 8000 --directory studio   # 然后开 http://localhost:8000/index.html
+python3 -m http.server 8000 --directory studio   # 然后访问 http://localhost:8000/index.html
 ./launch.sh                                      # 同上，一条命令的包装脚本
 ```
 
-`studio/index.html` 走原生 ES module（改完刷新即可，无需构建）；`pc-studio.html` 是同一个程序
-打成的单文件，可以 `file://` 直接双击——两轨并存的原因见 `studio/README.md`。
+`studio/index.html` 走原生 ES module（改完刷新即可，无需构建）；`pc-studio.html` 是同一个程序打成的单文件，可以 `file://` 直接双击——两轨并存的原因见 `studio/README.md`。
 
-## 5. 数字
+## 性能数据
 
 |                  | op / 轮 | arena      | 说明                            |
 | ---------------- | ------- | ---------- | ------------------------------- |
@@ -132,16 +132,14 @@ python3 -m http.server 8000 --directory studio   # 然后开 http://localhost:80
 
 `./build/schedule_demo` 的实测：1000 步 20.25 µs/步，`|M0|²=16.7028  |T0|²=219.77  |B0|²=10.2853`。
 
-## 6. 依赖
+## 依赖
 
 - C++17，无第三方库。
-- 矩阵乘默认走 **BLAS**：macOS 用 Accelerate（`CMakeLists.txt` 自动找头文件与框架），
-  其它平台 `find_package(BLAS)`；都不想要就 `cmake -DPC_USE_BLAS=OFF` 退回朴素三重循环。
-- `-ffp-contract=off` 默认开启——这是「融合算子」与「拆开写的算子序列」能逐位对数的前提。
-- File System Access API 只有 Chromium 系支持；Safari / Firefox 打开界面会退化成
-  「下载文件 + 选择文件打开」，功能不缺，只是不能原地覆盖。
+- 矩阵乘默认走 **BLAS**：macOS 使用 Accelerate（`CMakeLists.txt` 自动查找头文件与框架），其它平台 `find_package(BLAS)`；均不需要时可 `cmake -DPC_USE_BLAS=OFF` 退回朴素三重循环。
+- `-ffp-contract=off` 默认开启——这是「融合算子」与「拆开写的算子序列」能够逐位对数的前提。
+- File System Access API 仅 Chromium 系支持；Safari / Firefox 打开界面会退化为「下载文件 + 选择文件打开」，功能不缺，只是无法原地覆盖。
 
-## 7. 文档
+## 文档
 
 - `reports/报告-重构与studio.md` —— 引擎重构、图→schedule 语义、界面实现、跨语言对数的完整说明。
-- `reports/报告-schedule-generator.md` —— schedule 自动生成器那一轮：融合分层、内存规划、四个真 bug、实测数据。
+- `reports/报告-schedule-generator.md` —— schedule 自动生成器那一轮：融合分层、内存规划、四个真实 bug、实测数据。
