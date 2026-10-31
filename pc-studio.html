@@ -1,0 +1,2597 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<title>pc-studio · 预测编码图编辑器</title>
+<style>
+  :root{
+    --bg:#0b0e13; --panel:#11151c; --panel2:#151a23; --line:#1e2633; --line2:#2a3444;
+    --fg:#d7dee8; --dim:#8b98a9; --dim2:#66717f; --acc:#4da3ff; --acc2:#7bd88f;
+    --warn:#e0a458; --bad:#ef7c74; --radius:8px;
+    color-scheme:dark;            /* 让原生滚动条/输入框按深色绘制 */
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{background:var(--bg);color:var(--fg);font:13px/1.5 -apple-system,"SF Pro SC","PingFang SC",system-ui,sans-serif;
+       overflow:hidden;-webkit-font-smoothing:antialiased}
+  .mono{font-family:"SF Mono",ui-monospace,Menlo,monospace}
+
+  /* ── 顶栏 ── */
+  #top{height:46px;display:flex;align-items:center;gap:10px;padding:0 12px;background:var(--panel);
+       border-bottom:1px solid var(--line);position:relative;z-index:20}
+  #top .brand{font-weight:600;letter-spacing:.02em}
+  #top .brand b{color:var(--acc)}
+  #top .sep{width:1px;height:20px;background:var(--line2)}
+  .pill{background:var(--panel2);border:1px solid var(--line2);color:var(--dim);
+        padding:4px 10px;border-radius:999px;cursor:pointer;font-size:12px;white-space:nowrap}
+  .pill:hover{border-color:var(--acc);color:var(--fg)}
+  .pill.on{background:rgba(77,163,255,.16);border-color:var(--acc);color:#cfe6ff}
+  #toggles{margin-left:auto;display:flex;gap:6px;align-items:center}
+  #stat{display:flex;gap:8px;align-items:center;font-size:12px;color:var(--dim)}
+  #stat .badge{padding:3px 9px;border-radius:999px;border:1px solid var(--line2);background:var(--panel2)}
+  #stat .ok{color:#a8e6b8;border-color:rgba(123,216,143,.4);background:rgba(123,216,143,.1)}
+  #stat .bad{color:#ffb3ad;border-color:rgba(239,124,116,.45);background:rgba(239,124,116,.1)}
+
+  /* ── 布局 ── */
+  #main{display:flex;height:calc(100% - 46px)}
+  #left{width:206px;flex:0 0 auto;background:var(--panel);border-right:1px solid var(--line);overflow-y:auto}
+  #stage{flex:1 1 auto;position:relative;overflow:hidden;cursor:default;
+    background:
+      radial-gradient(circle at 1px 1px,#171e28 1px,transparent 0) 0 0/24px 24px,
+      radial-gradient(circle at 1px 1px,#11161e 1px,transparent 0) 0 0/12px 12px,
+      #080b0f}
+  #stage.drag{cursor:grabbing}
+  #right{width:296px;flex:0 0 auto;background:var(--panel);border-left:1px solid var(--line);
+         overflow-y:auto;display:flex;flex-direction:column}
+
+  /* ── 滚动条 ── */
+  /* 不用 scrollbar-color/scrollbar-width（会和下面的 ::-webkit-scrollbar 打架），
+     只用 webkit 伪元素，Chromium 系能完全控制轨道与滑块的颜色 */
+  #left::-webkit-scrollbar,#right::-webkit-scrollbar,#lc-body::-webkit-scrollbar,
+  #modal pre::-webkit-scrollbar{width:10px;height:10px}
+  #left::-webkit-scrollbar-track,#right::-webkit-scrollbar-track,#lc-body::-webkit-scrollbar-track,
+  #modal pre::-webkit-scrollbar-track{background:transparent}
+  #left::-webkit-scrollbar-thumb,#right::-webkit-scrollbar-thumb,#lc-body::-webkit-scrollbar-thumb,
+  #modal pre::-webkit-scrollbar-thumb{
+    background:#2c3748;border:2px solid transparent;border-radius:6px;background-clip:padding-box}
+  #left::-webkit-scrollbar-thumb:hover,#right::-webkit-scrollbar-thumb:hover,
+  #lc-body::-webkit-scrollbar-thumb:hover,#modal pre::-webkit-scrollbar-thumb:hover{
+    background:#3a4759;border:2px solid transparent;background-clip:padding-box}
+  #left::-webkit-scrollbar-corner,#right::-webkit-scrollbar-corner{background:transparent}
+
+  /* ── 组件库 ── */
+  .grp{padding:8px 10px 2px;font-size:11px;letter-spacing:.08em;color:var(--dim2);text-transform:uppercase}
+  .item{display:flex;align-items:center;gap:8px;margin:4px 8px;padding:7px 9px;border-radius:var(--radius);
+        background:var(--panel2);border:1px solid var(--line);cursor:grab;user-select:none}
+  .item:hover{border-color:var(--acc);background:#18202b}
+  .item:active{cursor:grabbing}
+  .dot{width:8px;height:8px;border-radius:50%;flex:0 0 auto}
+  .item .t{font-size:12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .item .n{display:none}
+
+  /* ── 画布里的节点 ── */
+  #world{position:absolute;left:0;top:0;transform-origin:0 0;width:100%;height:100%}
+  .node{position:absolute;background:#0f141b;border:1px solid var(--line2);border-radius:9px;
+        box-shadow:0 6px 18px rgba(0,0,0,.45);user-select:none;overflow:hidden}
+  .node.sel{border-color:var(--acc);box-shadow:0 0 0 1px var(--acc),0 8px 24px rgba(77,163,255,.18)}
+  .node.err{border-color:var(--bad)}
+  .node .hd{height:30px;display:flex;align-items:center;gap:6px;padding:0 9px;cursor:move;
+            background:linear-gradient(180deg,#161c26,#131922);border-bottom:1px solid var(--line)}
+  .node .hd .nm{font-size:12px;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .node .hd .tag{margin-left:auto;font-size:10px;color:var(--dim2);letter-spacing:.04em}
+  .node .bd{padding:5px 0 6px}
+  .port{height:20px;display:flex;align-items:center;font-size:11px;color:var(--dim);position:relative}
+  .port .lb{padding:0 12px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .port.out{justify-content:flex-end}
+  .port.out .lb{text-align:right}
+  .port .pin{position:absolute;width:11px;height:11px;border-radius:50%;background:#0b0f14;
+             border:2px solid #4a5a70;cursor:crosshair;z-index:2}
+  .port .pin:hover{background:var(--acc);border-color:#bfe0ff;transform:scale(1.25)}
+  .port.in .pin{left:-6px} .port.out .pin{right:-6px}
+  .port .pin.hot{background:var(--acc2);border-color:#d8ffe4}
+  .port .val{position:absolute;right:12px;font-size:10px;color:var(--dim2)}
+  .node .note{font-size:10.5px;color:#7d8b9d;padding:1px 10px 0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-family:"SF Mono",ui-monospace,monospace}
+  .node .note:first-of-type{margin-top:5px;border-top:1px dashed #1b232e;padding-top:5px}
+  .node .ft{height:18px;display:flex;align-items:center;padding:0 9px;font-size:10px;color:var(--dim2);
+            border-top:1px solid #141a22;background:#0d1218}
+
+  #wires{position:absolute;inset:0;overflow:visible;pointer-events:none}
+  #wires path{pointer-events:stroke}
+  #wires path.hit{cursor:pointer}
+
+  /* ── 右栏 ── */
+  .card{border-bottom:1px solid var(--line);padding:10px 12px}
+  .card h4{margin:0 0 8px;font-size:11px;letter-spacing:.08em;color:var(--dim2);text-transform:uppercase;font-weight:600}
+  .row{display:flex;align-items:center;justify-content:space-between;gap:8px;margin:5px 0;font-size:12px}
+  .row label{color:var(--dim)}
+  input[type=number],input[type=text],select{background:#0c1117;border:1px solid var(--line2);color:var(--fg);
+      border-radius:6px;padding:3px 6px;font-size:12px;width:76px;font-family:inherit}
+  input[type=range]{width:100%;accent-color:var(--acc)}
+  select{width:104px}
+  .btn{background:#1a2330;border:1px solid var(--line2);color:var(--fg);border-radius:7px;padding:6px 10px;
+       cursor:pointer;font-size:12px;font-family:inherit}
+  .btn:hover{border-color:var(--acc);color:#cfe6ff}
+  .btn.primary{background:rgba(77,163,255,.16);border-color:var(--acc);color:#d9ecff}
+  .btn.danger:hover{border-color:var(--bad);color:#ffc9c4}
+  .btns{display:flex;gap:6px;flex-wrap:wrap}
+  .kv{display:flex;justify-content:space-between;font-size:12px;color:var(--dim);margin:3px 0}
+  .kv b{color:var(--fg);font-weight:600}
+  canvas.chart{width:100%;height:96px;display:block;background:#0a0e14;border:1px solid var(--line);border-radius:6px}
+  .hm{display:grid;gap:1px;background:#0a0e14;border:1px solid var(--line);border-radius:6px;padding:3px}
+  .hm i{display:block;aspect-ratio:1;border-radius:1px}
+  .legend{display:flex;justify-content:space-between;font-size:10px;color:var(--dim2);margin-top:3px}
+  .empty{color:var(--dim2);font-size:12px}
+
+  /* ── 弹层 ── */
+  #modal{position:fixed;inset:0;background:rgba(4,6,9,.72);display:none;z-index:50;padding:40px}
+  #modal.on{display:flex} #modal .box{margin:auto;width:min(920px,100%);max-height:100%;display:flex;flex-direction:column;
+      background:var(--panel);border:1px solid var(--line2);border-radius:10px;overflow:hidden}
+  #modal .hd{display:flex;align-items:center;gap:8px;padding:10px 12px;border-bottom:1px solid var(--line)}
+  #modal .hd b{font-size:13px} #modal .hd .sp{margin-left:auto}
+  #modal pre{margin:0;padding:12px;overflow:auto;flex:1;font:12px/1.55 "SF Mono",ui-monospace,monospace;color:#b9c7d8}
+  .toast{position:fixed;left:50%;bottom:26px;transform:translateX(-50%) translateY(16px);opacity:0;
+     background:#18202b;border:1px solid var(--acc);color:#d9ecff;padding:8px 16px;border-radius:999px;
+     font-size:12px;transition:.18s;pointer-events:none;z-index:60}
+  .toast.on{opacity:1;transform:translateX(-50%) translateY(0)}
+  .hint{font-size:11px;color:var(--dim2);line-height:1.6}
+  .sw{display:flex;gap:6px;align-items:center;font-size:12px;color:var(--dim)}
+  .sw input{width:auto}
+
+  /* ── 顶栏菜单 ── */
+  .menu-btn{position:relative;display:inline-flex}
+  .menu{position:absolute;top:calc(100% + 7px);left:0;min-width:196px;background:var(--panel2);
+        border:1px solid var(--line2);border-radius:9px;padding:5px;display:none;z-index:40;
+        box-shadow:0 16px 34px rgba(0,0,0,.55)}
+  .menu.on{display:block}
+  .menu .mi{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;font-size:12px;
+            color:var(--fg);cursor:pointer;white-space:nowrap}
+  .menu .mi:hover{background:#1d2734}
+  .menu .mi .k{margin-left:auto;color:var(--dim2);font-size:11px}
+  .menu .mi.dim{color:var(--dim2)}
+  .menu .msep{height:1px;background:var(--line);margin:4px 2px}
+  .menu .mhd{padding:5px 9px 3px;font-size:10.5px;color:var(--dim2);letter-spacing:.06em}
+
+  /* ── 框选 / 缩放条 ── */
+  #marquee{position:absolute;border:1px solid var(--acc);background:rgba(77,163,255,.13);
+           border-radius:3px;pointer-events:none;display:none;z-index:8}
+  #zoombar{position:absolute;right:14px;bottom:14px;display:flex;align-items:center;gap:7px;
+           background:rgba(17,21,28,.9);border:1px solid var(--line2);border-radius:999px;
+           padding:5px 9px;z-index:12;box-shadow:0 8px 20px rgba(0,0,0,.45)}
+  #zoombar input[type=range]{width:124px}
+  #zoombar .zval{width:38px;text-align:right;font-size:11px;color:var(--dim)}
+  #zoombar .zb{width:22px;height:22px;border-radius:50%;border:1px solid var(--line2);background:#0f141b;
+               color:var(--dim);cursor:pointer;font-size:13px;line-height:1;padding:0}
+  #zoombar .zb:hover{color:var(--fg);border-color:var(--acc)}
+  #stage{user-select:none}
+  #stage.nogrid{background:#080b0f}
+  #stage.panning{cursor:grabbing}
+
+  /* ── 左侧设置 ── */
+  .setbox{margin:8px 8px 14px;padding:8px 6px 6px;border-top:1px solid var(--line)}
+  .setrow{display:flex;align-items:center;gap:7px;margin:7px 4px;font-size:12px;color:var(--dim)}
+  .setrow label{flex:0 0 auto}
+  .setrow input[type=range]{flex:1 1 auto;width:auto;min-width:0}
+  .setrow b{flex:0 0 auto;color:var(--fg);font-size:11px;min-width:34px;text-align:right}
+
+  /* ── 左右栏开关 ── */
+  #main.hide-left #left{display:none}
+  #main.hide-right #right{display:none}
+  .tg.on,.tg:hover{border-color:#3d8bfd;color:#e6eefc}
+  .tg.off{opacity:.45}
+  #stage.cutting{cursor:crosshair}
+  .mi.cur span:first-child{color:#7bd88f}
+  #btn-tool.on{border-color:#ef7c74;color:#ef7c74}
+  .tg{width:auto;padding:0 8px;height:22px;display:inline-flex;align-items:center;justify-content:center;
+      border:1px solid var(--line2);border-radius:6px;background:#0f141b;color:var(--dim);
+      cursor:pointer;font-size:12px;line-height:1}
+  .tg:hover{color:var(--fg);border-color:var(--acc)}
+  .tg.off{color:#4a5568;border-color:#222c3a}
+
+  /* ── 左栏：组件 / 设置 折叠 ── */
+  .sec-head{display:flex;align-items:center;gap:7px;padding:9px 11px;font-size:12.5px;
+            color:var(--fg);cursor:pointer;border-bottom:1px solid var(--line);user-select:none}
+  .sec-head:hover{background:#121821}
+  .sec-head .car{margin-left:auto;color:var(--dim2);font-size:10px;transition:.15s}
+  .sec-head.open .car{transform:rotate(90deg)}
+  #lc-body{display:none;overflow:auto}
+  #lc-body.open{display:block}
+  #left{display:flex;flex-direction:column}
+  #left .grp{margin:9px 8px 3px}
+
+  /* ── 设置浮窗（画布上方）── */
+  #setpop{position:absolute;left:12px;top:12px;width:250px;background:var(--panel2);
+          border:1px solid var(--line2);border-radius:10px;z-index:14;display:none;
+          box-shadow:0 18px 40px rgba(0,0,0,.55)}
+  #setpop.on{display:block}
+  #setpop .hd{display:flex;align-items:center;padding:8px 10px;border-bottom:1px solid var(--line);font-size:12px}
+  #setpop .hd b{font-weight:600}
+  #setpop .hd .x{margin-left:auto;cursor:pointer;color:var(--dim2);padding:0 3px}
+  #setpop .hd .x:hover{color:var(--fg)}
+  #setpop .bd{padding:4px 6px 9px}
+
+  /* ── 右键菜单 ── */
+  #ctxmenu{position:fixed;min-width:132px;background:var(--panel2);border:1px solid var(--line2);
+           border-radius:8px;padding:4px;display:none;z-index:70;box-shadow:0 16px 34px rgba(0,0,0,.55)}
+  #ctxmenu.on{display:block}
+  #ctxmenu .ci{display:flex;align-items:center;gap:8px;padding:6px 9px;border-radius:6px;
+               font-size:12px;cursor:pointer;white-space:nowrap}
+  #ctxmenu .ci:hover{background:#1d2734}
+  #ctxmenu .ci .k{margin-left:auto;color:var(--dim2);font-size:11px}
+  #ctxmenu .ci.dis{color:#4a5568;pointer-events:none}
+
+  /* ── 监视组件里的方阵 ── */
+  .mon{display:grid;gap:1px;padding:4px 6px 6px}
+
+</style>
+</head>
+<body>
+<div id="top">
+  <div class="brand">pc<b>-studio</b></div>
+  <span class="sep"></span>
+  <div class="menu-btn">
+    <span class="pill" id="btn-file">文件 ▾</span>
+    <div class="menu" id="filemenu">
+      <div class="mi" data-act="new">新建图纸<span class="k">⌘N</span></div>
+      <div class="mi" data-act="save">保存<span class="k">⌘S</span></div>
+      <div class="mi" data-act="saveas">另存为…</div>
+      <div class="mi" data-act="open">加载图纸…<span class="k">⌘O</span></div>
+      <div class="msep"></div>
+      <div class="mhd">示例图纸</div>
+      <div class="mi" data-act="ex0">两层（M[0] ↔ M[1]）</div>
+      <div class="mi" data-act="ex1">三层（EM 串联）</div>
+      <div class="mi" data-act="ex2">只有输入层（退化）</div>
+      <div class="msep"></div>
+      <div class="mi" data-act="json">导出 JSON…</div>
+      <div class="mi" data-act="cpp">导出 C++ 代码…</div>
+    </div>
+  </div>
+  <span class="sep"></span>
+  <div class="menu-btn">
+    <span class="pill" id="btn-tool">工具 ▾</span>
+    <div class="menu" id="toolmenu">
+      <div class="mi" data-mode="select"><span>选择</span><span class="k">V</span></div>
+      <div class="mi" data-mode="scissor"><span>剪刀</span><span class="k">S</span></div>
+    </div>
+  </div>
+  <span class="pill" id="btn-layout">整理布局</span>
+  <span class="pill" id="btn-help">帮助</span>
+  <span class="pill" id="btn-json" hidden>导出 JSON</span>
+  <span class="pill" id="btn-cpp" hidden>导出 C++</span>
+  <div id="toggles">
+    <span class="tg" id="btn-left" title="显示/隐藏左栏">◧ 左栏</span>
+    <span class="tg" id="btn-right" title="显示/隐藏右栏">右栏 ◨</span>
+  </div>
+  <div id="stat">
+    <span class="badge" id="b-ops">ops —</span>
+    <span class="badge" id="b-arena">arena —</span>
+    <span class="badge" id="b-check">校验 —</span>
+  </div>
+</div>
+
+<div id="main">
+  <div id="left">
+    <div class="sec-head open" id="lc-head">组件<span class="car">▶</span></div>
+    <div id="lc-body" class="open"></div>
+    <div class="sec-head" id="ls-head">设置<span class="car">▶</span></div>
+  </div>
+  <div id="stage">
+    <div id="world">
+      <svg id="wires"></svg>
+      <div id="nodes"></div>
+    </div>
+    <div id="setpop">
+      <div class="hd"><b>设置</b><span class="x" id="set-close">✕</span></div>
+      <div class="bd" id="set-body"></div>
+    </div>
+    <div id="marquee"></div>
+    <div id="zoombar">
+      <button class="zb" id="z-out" title="缩小">−</button>
+      <input type="range" id="z-range" min="20" max="240" value="80">
+      <button class="zb" id="z-in" title="放大">+</button>
+      <span class="zval" id="z-val">80%</span>
+      <button class="zb" id="z-fit" title="适应画布">⤢</button>
+    </div>
+  </div>
+  <div id="right">
+    <div class="card">
+      <h4>运行</h4>
+      <div class="btns">
+        <button class="btn primary" id="btn-run">▶ 运行</button>
+        <button class="btn" id="btn-step">单步</button>
+        <button class="btn" id="btn-reset">重置</button>
+      </div>
+      <div class="row"><label>速度（步/帧）</label><input type="number" id="speed" value="2" min="1" max="200" step="1"></div>
+      <div class="row"><label>已跑</label><b id="k-it" class="mono">0</b></div>
+      <div class="row"><label>自由能 F</label><b id="k-F" class="mono">—</b></div>
+      <div class="row"><label>重建误差 ‖ε₀‖²</label><b id="k-e0" class="mono">—</b></div>
+    </div>
+
+    <div class="card">
+      <h4>超参</h4>
+      <div class="row"><label>η_μ 推理</label><input type="number" id="p-lrmu" step="0.05" value="0.1"></div>
+      <div class="row"><label>η_θ 权重</label><input type="number" id="p-lrt" step="0.005" value="0.01"></div>
+      <div class="row"><label>η_β 偏置</label><input type="number" id="p-lrb" step="0.005" value="0.01"></div>
+      <div class="row"><label>每 N 步学一次</label><input type="number" id="p-ninfer" step="1" min="1" value="20"></div>
+      <div class="row"><label>种子</label><input type="number" id="p-seed" step="1" value="42"></div>
+      <div class="row"><label>顶层先验 ω</label><input type="number" id="p-wtop" step="0.01" min="0" value="0.02" title="顶层 ε = ω·μ；ω 越小，高阶表征越不会被压向 0"></div>
+      <div class="row"><label>固定样本</label><input type="checkbox" id="p-fixed" checked></div>
+    </div>
+
+    <div class="card">
+      <h4>曲线</h4>
+      <canvas class="chart" id="chart"></canvas>
+      <div class="legend"><span>自由能 F（log）</span><span>最近 240 步</span></div>
+    </div>
+
+    <div class="card" id="insp">
+      <h4>检视器</h4>
+      <div class="empty">点一个节点看它的语义、形状、以及它产生的 op。</div>
+    </div>
+  </div>
+</div>
+
+<div id="modal"><div class="box">
+  <div class="hd"><b id="m-title">导出</b><span class="sp"></span>
+    <button class="btn" id="m-save">保存…</button><button class="btn" id="m-copy">复制</button><button class="btn" id="m-close">关闭</button></div>
+  <pre id="m-body"></pre>
+</div></div>
+<input type="file" id="pk-file" accept=".json,application/json" hidden>
+<div id="ctxmenu"></div>
+<div class="toast" id="toast"></div>
+
+<script>
+/* tool/pcgraph.js —— 语义图 → Op[] → arena → 运行 / 导出 C++
+ *
+ * 这个文件和 engine/pc.hpp 是"同一个引擎的两份实现"：张量、op、相位、
+ * 区间着色规划、mt19937 初始化序列一一对应，所以浏览器里的曲线和导出的
+ * C++ 跑出来的是同一组数（tools/crosscheck 会核对）。
+ *
+ * 层次：组件库 LIB → 语义图 spec（节点+连线）→ lower() → Program（Op[]+arena）→ run()
+ *
+ * 连线语义（这是整个界面唯一需要理解的一条规则）：
+ *   状态节点的左侧是 in，右侧是 out。op 的 d 输出连到某个状态的 in，
+ *   表示"这个 op 直接写进那块内存"（原地写回）。例如
+ *       AXPY(Δμ, s=η) → M[1].in      就是  M[1] += η·Δμ
+ *       x            → M[0].in      就是  M[0] = x
+ */
+(function (root, factory) {
+  const api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  root.PC = api;
+})(typeof self !== 'undefined' ? self : this, function () {
+  'use strict';
+
+  const sh = (r, c) => ({ r, c, n: r * c });
+  const same = (a, b) => !!a && !!b && a.r === b.r && a.c === b.c;
+  const fmtShape = s => (s ? (s.r === 1 ? `1×${s.c}` : `${s.r}×${s.c}`) : '?');
+
+  // ───────────────────── mt19937（与 C++ std::mt19937 同序列）─────────────────────
+  class MT {
+    constructor(seed) {
+      this.mt = new Uint32Array(624);
+      this.idx = 624;
+      this.mt[0] = seed >>> 0;
+      for (let i = 1; i < 624; i++) {
+        const prev = this.mt[i - 1] ^ (this.mt[i - 1] >>> 30);
+        this.mt[i] = (Math.imul(1812433253, prev) + i) >>> 0;
+      }
+    }
+    next32() {
+      if (this.idx >= 624) this.twist();
+      let y = this.mt[this.idx++];
+      y ^= y >>> 11;
+      y ^= (y << 7) & 0x9d2c5680;
+      y ^= (y << 15) & 0xefc60000;
+      y ^= y >>> 18;
+      return y >>> 0;
+    }
+    twist() {
+      for (let i = 0; i < 624; i++) {
+        const y = (this.mt[i] & 0x80000000) | (this.mt[(i + 1) % 624] & 0x7fffffff);
+        this.mt[i] = this.mt[(i + 397) % 624] ^ (y >>> 1) ^ (y & 1 ? 0x9908b0df : 0);
+      }
+      this.idx = 0;
+    }
+    uniform(lo, hi) { return lo + (hi - lo) * (this.next32() / 4294967296); }
+  }
+
+  // ─────────────────────────── Program ───────────────────────────
+  const PH = { PREDICT: 0, INFER: 1, LEARN: 2 };
+  const PHNAME = ['预测/误差', '推理（μ）', '学习（θ,β）'];
+
+  class Program {
+    constructor() {
+      this.tensors = [];
+      this.ops = [];
+      this.planned = false;
+      this.rng = new MT(42);
+    }
+    _t(name, s, isState) {
+      const t = { id: this.tensors.length, name, shape: s, off: 0, isState, first: -1, last: -1 };
+      this.tensors.push(t);
+      return t;
+    }
+    state(name, s) { return this._t(name, s, true); }
+    temp(name, s) {
+      let n = name, k = 2;
+      while (this.tensors.some(t => t.name === n)) n = name + '_' + k++;
+      return this._t(n, s, false);
+    }
+
+    _push(k, a, b, d, scalar, acc, phase) {
+      if (k === 'MATMUL_NN' && !(a.shape.c === b.shape.r && d.shape.r === a.shape.r && d.shape.c === b.shape.c))
+        throw new Error(`MATMUL_NN 形状不符: ${fmtShape(a.shape)}·${fmtShape(b.shape)} → ${fmtShape(d.shape)}`);
+      if (k === 'MATMUL_TN' && !(a.shape.r === b.shape.r && d.shape.r === a.shape.c && d.shape.c === b.shape.c))
+        throw new Error(`MATMUL_TN 形状不符: ${fmtShape(a.shape)}ᵀ·${fmtShape(b.shape)} → ${fmtShape(d.shape)}`);
+      if (k === 'MATMUL_NT' && !(a.shape.c === b.shape.c && d.shape.r === a.shape.r && d.shape.c === b.shape.r))
+        throw new Error(`MATMUL_NT 形状不符: ${fmtShape(a.shape)}·${fmtShape(b.shape)}ᵀ → ${fmtShape(d.shape)}`);
+      if (['ADD', 'SUB', 'MUL'].includes(k) && !(same(a.shape, b.shape) && same(a.shape, d.shape)))
+        throw new Error(`${k} 形状不符: ${fmtShape(a.shape)} / ${fmtShape(b.shape)} → ${fmtShape(d.shape)}`);
+      if (['SCALE', 'TANH', 'ONE_MINUS_SQ', 'CLAMP', 'AXPY', 'COPY'].includes(k) && !same(a.shape, d.shape))
+        throw new Error(`${k} 形状不符: ${fmtShape(a.shape)} → ${fmtShape(d.shape)}`);
+      if (k === 'SUM_ROWS' && !(d.shape.r === 1 && d.shape.c === a.shape.c))
+        throw new Error(`SUM_ROWS 形状不符: ${fmtShape(a.shape)} → ${fmtShape(d.shape)}`);
+      this.ops.push({ k, a, b, d, scalar: scalar || 0, acc: !!acc, phase: phase || 0 });
+    }
+
+    clear(d, ph) { this._push('CLEAR', d, null, d, 0, 0, ph); }
+    copy(a, d, ph) { this._push('COPY', a, null, d, 0, 0, ph); }
+    add(a, b, d, ph) { this._push('ADD', a, b, d, 0, 0, ph); }
+    sub(a, b, d, ph) { this._push('SUB', a, b, d, 0, 0, ph); }
+    mul(a, b, d, ph) { this._push('MUL', a, b, d, 0, 0, ph); }
+    scale(s, a, d, ph) { this._push('SCALE', a, null, d, s, 0, ph); }
+    tanh(a, d, ph) { this._push('TANH', a, null, d, 0, 0, ph); }
+    oneMinusSq(a, d, ph) { this._push('ONE_MINUS_SQ', a, null, d, 0, 0, ph); }
+    clamp(a, d, c, ph) { this._push('CLAMP', a, null, d, c, 0, ph); }
+    axpy(s, a, d, ph) { this._push('AXPY', a, null, d, s, 0, ph); }
+    sumRows(a, d, acc, ph) { this._push('SUM_ROWS', a, null, d, 0, acc, ph == null ? 2 : ph); }
+    mm(a, b, d, acc, ph) { this._push('MATMUL_NN', a, b, d, 0, acc, ph); }
+    mmta(a, b, d, acc, ph) { this._push('MATMUL_TN', a, b, d, 0, acc, ph); }
+    mmtb(a, b, d, acc, ph) { this._push('MATMUL_NT', a, b, d, 0, acc, ph); }
+
+    // 区间着色：状态先放（偏移稳定、可读），临时量按生命周期首次适配
+    plan(align, reuse) {
+      align = align || 64;
+      const up = v => Math.ceil(v / align) * align;
+      this.ops.sort((x, y) => x.phase - y.phase);
+      const touch = (t, i) => { if (!t) return; if (t.first < 0) t.first = i; t.last = i; };
+      this.ops.forEach((o, i) => { touch(o.a, i); touch(o.b, i); touch(o.d, i); });
+
+      let cur = 0;
+      for (const t of this.tensors) {
+        if (!t.isState) continue;
+        t.off = cur;
+        cur += up(t.shape.n * 4);
+      }
+      this.stateBytes = cur;
+
+      const iv = this.tensors
+        .filter(t => !t.isState && t.first >= 0)
+        .map(t => ({ t, beg: t.first, end: t.last, bytes: up(t.shape.n * 4) }))
+        .sort((x, y) => (x.beg - y.beg) || (x.t.id - y.t.id));
+
+      if (reuse === false) {
+        let off = 0;
+        for (const v of iv) { v.t.off = cur + off; off += v.bytes; }
+        this.tempBytes = off;
+      } else {
+        let top = 0;
+        const active = [];
+        for (const v of iv) {
+          for (let i = active.length - 1; i >= 0; i--) if (active[i].end < v.beg) active.splice(i, 1);
+          const act = active.slice().sort((x, y) => x.off2 - y.off2);
+          const free = [];
+          let c2 = 0;
+          for (const a of act) {
+            if (a.off2 > c2) free.push([c2, a.off2 - c2]);
+            c2 = Math.max(c2, a.off2 + a.bytes);
+          }
+          if (top > c2) free.push([c2, top - c2]);
+          let chosen = -1;
+          for (const f of free) if (f[1] >= v.bytes) { chosen = f[0]; break; }
+          if (chosen < 0) chosen = top;
+          active.push({ end: v.end, off2: chosen, bytes: v.bytes });
+          top = Math.max(top, chosen + v.bytes);
+          v.t.off = cur + chosen;
+        }
+        this.tempBytes = top;
+      }
+      this.total = up(this.stateBytes + this.tempBytes);
+      this.buf = new Float32Array(this.total / 4 + 16);
+      this.planned = true;
+      return this;
+    }
+
+    ptr(t) { return t.off / 4; }
+    seed(s) { this.rng = new MT(s >>> 0); }
+    fillUniform(t, lo, hi) {
+      const p = this.ptr(t), n = t.shape.n;
+      for (let i = 0; i < n; i++) this.buf[p + i] = this.rng.uniform(lo, hi);
+    }
+    fill(t, v) { this.buf.fill(v, this.ptr(t), this.ptr(t) + t.shape.n); }
+    read(t) { return this.buf.slice(this.ptr(t), this.ptr(t) + t.shape.n); }
+    // 某个张量最后一次被写时的相位（写回时跟它对齐，保证先后顺序）
+    lastPhase(t) {
+      for (let i = this.ops.length - 1; i >= 0; i--) if (this.ops[i].d.id === t.id) return this.ops[i].phase;
+      return 0;
+    }
+    at(t) { return this.ptr(t); }
+  }
+
+  function mm(B, d, a, b, M, N, Kk, ta, tb, acc) {
+    if (!acc) B.fill(0, d, d + M * N);
+    for (let m = 0; m < M; m++)
+      for (let k = 0; k < Kk; k++) {
+        const av = ta ? B[a + k * M + m] : B[a + m * Kk + k];
+        if (av === 0) continue;
+        const dRow = d + m * N, bRow = tb ? b + k * Kk : b + k * N;
+        for (let n = 0; n < N; n++) B[dRow + n] += av * (tb ? B[b + n * Kk + k] : B[bRow + n]);
+      }
+  }
+
+  function execOp(pr, o) {
+    const B = pr.buf;
+    const d = pr.ptr(o.d);
+    const a = o.a ? pr.ptr(o.a) : 0;
+    const b = o.b ? pr.ptr(o.b) : 0;
+    const n = o.d.shape.n;
+    switch (o.k) {
+      case 'CLEAR': B.fill(0, d, d + n); break;
+      case 'COPY': if (a !== d) B.copyWithin(d, a, a + n); break;
+      case 'ADD': for (let i = 0; i < n; i++) B[d + i] = B[a + i] + B[b + i]; break;
+      case 'SUB': for (let i = 0; i < n; i++) B[d + i] = B[a + i] - B[b + i]; break;
+      case 'MUL': for (let i = 0; i < n; i++) B[d + i] = B[a + i] * B[b + i]; break;
+      case 'SCALE': for (let i = 0; i < n; i++) B[d + i] = B[a + i] * o.scalar; break;
+      case 'TANH': for (let i = 0; i < n; i++) B[d + i] = Math.tanh(B[a + i]); break;
+      case 'ONE_MINUS_SQ': for (let i = 0; i < n; i++) B[d + i] = 1 - B[a + i] * B[a + i]; break;
+      case 'CLAMP': for (let i = 0; i < n; i++) B[d + i] = Math.max(-o.scalar, Math.min(o.scalar, B[a + i])); break;
+      case 'AXPY': for (let i = 0; i < n; i++) B[d + i] += o.scalar * B[a + i]; break;
+      case 'SUM_ROWS': {
+        const r = o.a.shape.r, c = o.a.shape.c;
+        if (!o.acc) B.fill(0, d, d + c);
+        for (let i = 0; i < r; i++) for (let j = 0; j < c; j++) B[d + j] += B[a + i * c + j];
+        break;
+      }
+      case 'MATMUL_NN': mm(B, d, a, b, o.a.shape.r, o.b.shape.c, o.a.shape.c, false, false, o.acc); break;
+      case 'MATMUL_TN': mm(B, d, a, b, o.a.shape.c, o.b.shape.c, o.a.shape.r, true, false, o.acc); break;
+      case 'MATMUL_NT': mm(B, d, a, b, o.a.shape.r, o.b.shape.r, o.a.shape.c, false, true, o.acc); break;
+    }
+  }
+
+  function runPhase(pr, maxPhase) {
+    const mp = maxPhase == null ? 2 : maxPhase;
+    for (const o of pr.ops) { if (o.phase > mp) break; execOp(pr, o); }
+  }
+
+  // ─────────────────────────── 组件库 ───────────────────────────
+  // shape 规则统一用 (D, l) 求值；宽 D[l] 的行向量约定见 docs
+  const LIB = [
+    // 状态组件：名字和形状都是用户自己填的（不预设层宽 D）。
+    // 算子连上来之后，会按连线的形状去校验，不合法就在节点上报错。
+    { id: 'x', name: '输入 x', group: '状态', color: '#e2b86b', note: '观测。最低层，永远不被更新',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'x' }] },
+
+    { id: 'M', name: '后验 μ', group: '状态', color: '#69c98a', note: '后验状态，典型形状 1 × n 的行向量',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'μ' }] },
+
+    { id: 'T', name: '权重 θ', group: '状态', color: '#5aa9e6', note: '权重状态，典型形状 n_上 × n_下',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'θ' }] },
+
+    { id: 'B', name: '偏置 β', group: '状态', color: '#9b7ff0', note: '偏置状态，形状要和它预测的那层一致',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'β' }] },
+
+    { id: 'E', name: '误差 ε', group: '状态', color: '#ef7c74', note: '误差状态 ε = μ − f',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'ε' }] },
+
+    { id: 'V', name: '中间量', group: '状态', color: '#8d9bb0', note: '通用命名缓冲区（f、d、g …放在这里好观察）',
+      state: true, ins: [{ k: 'in', name: '写' }], outs: [{ k: 'out', name: 'v' }] },
+
+    { id: 'MON', name: '监视', group: '状态', color: '#7bd88f', note: '把一个张量画成方阵热力图（纯显示，不参与计算）',
+      view: true, ins: [{ k: 'v', name: '看' }], outs: [] },
+
+    { id: 'MATMUL_NN', name: 'MATMUL_NN', group: '算子', color: '#7fa8d8', note: 'd = a·b',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'MATMUL_NT', name: 'MATMUL_NT', group: '算子', color: '#7fa8d8', note: 'd = a·bᵀ',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'MATMUL_TN', name: 'MATMUL_TN', group: '算子', color: '#7fa8d8', note: 'd = aᵀ·b',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'ADD', name: 'ADD', group: '算子', color: '#7fa8d8', note: 'd = a + b',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'SUB', name: 'SUB', group: '算子', color: '#7fa8d8', note: 'd = a − b',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'MUL', name: 'MUL', group: '算子', color: '#7fa8d8', note: 'd = a ⊙ b',
+      ins: [{ k: 'a', name: 'a' }, { k: 'b', name: 'b' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'SCALE', name: 'SCALE', group: '算子', color: '#7fa8d8', note: 'd = s·a',
+      params: ['s'], defaults: { s: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'TANH', name: 'TANH', group: '算子', color: '#7fa8d8', note: 'd = tanh(a)',
+      ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'ONE_MINUS_SQ', name: 'ONE_MINUS_SQ', group: '算子', color: '#7fa8d8', note: 'd = 1 − a²（tanh 导数）',
+      ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'AXPY', name: 'AXPY 累加', group: '算子', color: '#e0a458', note: 'd += s·a —— 原地写回状态',
+      params: ['s'], defaults: { s: 0.1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+    { id: 'CLAMP', name: 'CLAMP', group: '算子', color: '#7fa8d8', note: 'd = clip(a, ±c)',
+      params: ['c'], defaults: { c: 1 }, ins: [{ k: 'a', name: 'a' }], outs: [{ k: 'd', name: 'd' }] },
+
+    { id: 'EM', name: 'EM 集成块', group: '集成', color: '#e8a0c0',
+      note: '一层的前向预测 + 误差 + 推理更新 + 学习更新。左下接 g（下层的 ε⊙d），左侧三个状态位的读/写各走一条线。',
+      macro: true, params: ['l'],
+      ins: [{ k: 'g', name: 'g（下层 ε⊙d）', optional: true },
+            { k: 'mu', name: 'μ（读）', optional: true },
+            { k: 'th', name: 'θ（读）', optional: true },
+            { k: 'be', name: 'β（读）', optional: true },
+            { k: 'fa', name: 'f_l（上层预测）', optional: true }],
+      outs: [{ k: 'f', name: 'f（预测下层）' },
+             { k: 'eps', name: 'ε（本层误差）' },
+             { k: 'mu1', name: 'μ′ 写回' },
+             { k: 'th1', name: 'θ′ 写回' },
+             { k: 'be1', name: 'β′ 写回' }] },
+  ];
+  const LIBMAP = {}; LIB.forEach(c => (LIBMAP[c.id] = c));
+
+  // 张量名（进 arena / 导出 C++）：M0, T1, E0, V_P0 …
+  function tname(n) {
+    const c = LIBMAP[n.type];
+    if (c && c.state && n.name) return String(n.name).replace(/[^\w\u4e00-\u9fa5]/g, '_');
+    if (n.type === 'x') return 'x';
+    if (['M', 'T', 'B', 'E'].includes(n.type) && n.l != null) return n.type + n.l;
+    return n.id;
+  }
+  // 显示名（界面上）：M[0], T[1] …
+  function label(n) {
+    const c = LIBMAP[n.type];
+    if (!c) return n.type;
+    if (c.state && n.name) return n.name;
+    if (c.params && c.params.includes('l') && n.l != null) return `${c.id}[${n.l}]`;
+    return c.name;
+  }
+
+  // 某个节点的端口形状
+  // 状态组件的形状：用户显式填的优先，没填就按老规矩从 dims 推一个默认值
+  function stateShape(spec, n) {
+    if (n.shape && n.shape.r > 0 && n.shape.c > 0) return sh(n.shape.r, n.shape.c);
+    const D = spec.dims || [64, 1024];
+    if (n.type === 'x') return sh(1, D[0]);
+    if (n.type === 'M') return sh(1, D[n.l || 0]);
+    if (n.type === 'T') return sh(D[n.l || 0], D[(n.l || 0) - 1] || D[0]);
+    if (n.type === 'B' || n.type === 'E') return sh(1, D[(n.l || 1) - 1] || D[0]);
+    return sh(1, D[0]);
+  }
+
+  function portShape(spec, n, port, isOut) {
+    const c = LIBMAP[n.type];
+    if (c.state) return isOut ? stateShape(spec, n) : null;
+    const D = spec.dims || [64, 1024];
+    if (n.type === 'EM') {
+      // EM 的形状由它接的状态决定（没接就无从谈起，返回 null 让 UI 只画个圆点）
+      const mu = edgeSource(spec, n, 'mu'), th = edgeSource(spec, n, 'th');
+      const Du = mu ? portShape(spec, mu.n, mu.port, true) : null;
+      const Tt = th ? portShape(spec, th.n, th.port, true) : null;
+      if (!Du || !Tt) return null;
+      const Dd = sh(1, Tt.c);
+      if (isOut) return (port === 'f' || port === 'be1') ? Dd : Du;
+      return (port === 'g') ? Dd : Du;
+    }
+    const defs = isOut ? c.outs : c.ins;
+    const def = defs && defs.find(p => p.k === port);
+    if (!def || !def.shape) return null;   // 算子端口：形状由上游决定
+    return def.shape(D, n.l, n);
+  }
+
+  function edgeSource(spec, n, port) {
+    for (const e of spec.edges) {
+      if (e.to[0] === n.id && e.to[1] === port) {
+        const src = spec.nodes.find(x => x.id === e.from[0]);
+        if (src && LIBMAP[src.type]) return { n: src, port: e.from[1] };
+        return null;
+      }
+    }
+    return null;
+  }
+
+  // ─────────────────────────── lowering ───────────────────────────
+  // 返回 {pr, errors, T, stats}
+  function lower(spec, opts) {
+    opts = opts || {};
+    const D = spec.dims;
+    const L = D.length - 1;
+    const pr = new Program();
+    const errors = [];
+    // 监视组件不进 lowering，但它的连线要能查到源张量
+    const all = spec.nodes.filter(n => LIBMAP[n.type]);
+    const nodes = all.filter(n => !LIBMAP[n.type].view);
+    const byId = {};
+    all.forEach(n => (byId[n.id] = n));
+
+    const T = {};           // "nodeId.port" → tensor
+    const errNodes = new Set();
+    const bad = (n, msg) => { errNodes.add(n.id); errors.push({ node: n.id, msg }); };
+    const writing = new Set();
+    const inc = {};         // "nodeId.port" → edge
+    for (const e of spec.edges) {
+      if (byId[e.from[0]] && byId[e.to[0]]) inc[e.to[0] + '.' + e.to[1]] = e;
+    }
+
+    // 状态张量（含 V），名字 = 节点标签
+    for (const n of nodes) {
+      const c = LIBMAP[n.type];
+      if (!c.state) continue;
+      const s = stateShape(spec, n);
+      T[n.id + '.out'] = pr.state(tname(n), s);
+    }
+    const stateT = (name) => pr.tensors.find(t => t.name === name && t.isState);
+
+    // 缺省状态：EM 需要 M/T/B/E，没有就自动补（省得用户手拖 4 个节点）
+    function ensure(name, s) {
+      const e = stateT(name);
+      if (e) return e;
+      return pr.state(name, s);
+    }
+
+    function inTensor(n, port) {
+      const e = inc[n.id + '.' + port];
+      if (!e) return null;
+      return outOf(byId[e.from[0]], e.from[1]);
+    }
+    function outOf(n, port) {
+      const key = n.id + '.' + port;
+      if (T[key]) return T[key];
+      emit(n);
+      if (!T[key] && !errNodes.has(n.id)) errors.push({ node: n.id, msg: `${label(n)}.${port} 没有输出` });
+      return T[key];
+    }
+
+    // 写回目标：op 的 d 连到状态 in 时，直接写那块内存
+    // （注意看的是从本节点 d 端口"出去"的边，不是进来的边）
+    function writeTarget(n, shape) {
+      const e = spec.edges.find(x => x.from[0] === n.id && x.from[1] === 'd' && x.to[1] === 'in');
+      if (e) {
+        const tgt = byId[e.to[0]];
+        const tc = LIBMAP[tgt.type];
+        if (tc && tc.state) {
+          const st = T[tgt.id + '.out'];
+          if (!same(st.shape, shape)) {
+            errors.push({ node: n.id, msg: `写回 ${label(tgt)} 形状不符: ${fmtShape(shape)} → ${fmtShape(st.shape)}` });
+            return pr.temp(n.id, shape);
+          }
+          return st;
+        }
+      }
+      return pr.temp(n.id, shape);
+    }
+
+    const done = new Set();
+    function emit(n) {
+      if (!n || writing.has(n.id) || done.has(n.id)) return;
+      const c = LIBMAP[n.type];
+      if (!c) return;
+      if (c.state) return;          // 状态是被动的
+      writing.add(n.id);
+
+      try {
+        if (n.type === 'EM') emitEM(n);
+        else emitOp(n);
+      } catch (err) {
+        errors.push({ node: n.id, msg: err.message });
+      }
+      writing.delete(n.id);
+      done.add(n.id);
+    }
+
+    function emitOp(n) {
+      const a = inTensor(n, 'a');
+      const b = inTensor(n, 'b');
+      const need = (n.type === 'ADD' || n.type === 'SUB' || n.type === 'MUL' ||
+                    n.type === 'MATMUL_NN' || n.type === 'MATMUL_NT' || n.type === 'MATMUL_TN');
+      if (!a && !b) { bad(n, `${label(n)}: 输入没连线`); return; }
+      if (need && (!a || !b)) {
+        bad(n, `${label(n)}: 还差一个输入（都连上才算得出形状）`);
+        return;
+      }
+      // 形状从连线上"读"出来：连对了就算得动，连错了就在这报出来
+      let s;
+      switch (n.type) {
+        case 'MATMUL_NN':
+          if (a.shape.c !== b.shape.r) { bad(n, `矩阵乘不上: ${fmtShape(a.shape)}·${fmtShape(b.shape)}（左列 ${a.shape.c} ≠ 右行 ${b.shape.r}）`); return; }
+          s = sh(a.shape.r, b.shape.c); break;
+        case 'MATMUL_NT':
+          if (a.shape.c !== b.shape.c) { bad(n, `矩阵乘不上: ${fmtShape(a.shape)}·${fmtShape(b.shape)}ᵀ（列 ${a.shape.c} ≠ 列 ${b.shape.c}）`); return; }
+          s = sh(a.shape.r, b.shape.r); break;
+        case 'MATMUL_TN':
+          if (a.shape.r !== b.shape.r) { bad(n, `矩阵乘不上: ${fmtShape(a.shape)}ᵀ·${fmtShape(b.shape)}（行 ${a.shape.r} ≠ 行 ${b.shape.r}）`); return; }
+          s = sh(a.shape.c, b.shape.c); break;
+        case 'ADD': case 'SUB': case 'MUL':
+          if (!same(a.shape, b.shape)) { bad(n, `${n.type} 两边形状不一致: ${fmtShape(a.shape)} vs ${fmtShape(b.shape)}`); return; }
+          s = a.shape; break;
+        default: s = (a || b).shape;
+      }
+      const d = writeTarget(n, s);
+      const ph = n.type === 'AXPY' ? PH.LEARN : PH.PREDICT;
+      switch (n.type) {
+        case 'MATMUL_NN': pr.mm(a, b, d); break;
+        case 'MATMUL_NT': pr.mmtb(a, b, d); break;
+        case 'MATMUL_TN': pr.mmta(a, b, d); break;
+        case 'ADD': pr.add(a, b, d); break;
+        case 'SUB': pr.sub(a, b, d); break;
+        case 'MUL': pr.mul(a, b, d); break;
+        case 'SCALE': pr.scale(num(n.s, 1), a, d); break;
+        case 'TANH': pr.tanh(a, d); break;
+        case 'ONE_MINUS_SQ': pr.oneMinusSq(a, d); break;
+        case 'CLAMP': pr.clamp(a, d, num(n.c, 1)); break;
+        case 'AXPY': pr.axpy(num(n.s, 0.1), a, d, ph); break;
+      }
+      T[n.id + '.d'] = d;
+    }
+
+    function emitEM(n) {
+      const l = n.l || 1;
+      // 形状完全由接进来的状态决定：μ 是 (1×Du)，θ 是 (Du×Dd)
+      const M = inTensor(n, 'mu');
+      const Tt = inTensor(n, 'th');
+      if (!M || !Tt) { bad(n, `EM 需要把 μ 和 θ 两个状态接进来（形状从它们读）`); return; }
+      if (M.shape.r !== 1) { bad(n, `EM 的 μ 应该是行向量 (1×n)，现在是 ${fmtShape(M.shape)}`); return; }
+      const Du = M.shape.c, Dd = Tt.shape.c;
+      if (Tt.shape.r !== Du) { bad(n, `EM 的 θ 应该是 (${Du}×n)，现在是 ${fmtShape(Tt.shape)}`); return; }
+      const B = inTensor(n, 'be') || ensure('B' + l, sh(1, Dd));
+      if (!same(B.shape, sh(1, Dd))) { bad(n, `EM 的 β 应该是 (1×${Dd})，现在是 ${fmtShape(B.shape)}`); return; }
+      const E = ensure('E' + l, sh(1, Du));
+      if (!same(E.shape, sh(1, Du))) { bad(n, `EM 的误差状态应该是 (1×${Du})，现在是 ${fmtShape(E.shape)}`); return; }
+      const g = inTensor(n, 'g');
+      const fa = inTensor(n, 'fa');
+
+      const pre = pr.temp('pre' + l, sh(1, Dd));
+      const f = pr.temp('f' + (l - 1), sh(1, Dd));
+      pr.mm(M, Tt, pre, false, PH.PREDICT);
+      pr.add(pre, B, f, PH.PREDICT);
+      pr.tanh(f, f, PH.PREDICT);
+
+      if (fa) {
+        if (!same(fa.shape, M.shape)) bad(n, `f_l 形状不符: ${fmtShape(fa.shape)} vs ${fmtShape(M.shape)}`);
+        pr.sub(M, fa, E, PH.PREDICT);
+      } else {
+        // 顶层：先验 N(0, Σ_l)，精度 ω = spec.wTop。ε = ω·μ（否则 ε=μ 会把 μ 压向 0，
+        // 高阶表征塌缩、只剩偏置在拟合——这正是修好之前的现象）
+        pr.scale(num(spec.wTop, 0.02), M, E, PH.PREDICT);
+      }
+      T[n.id + '.f'] = f;
+      T[n.id + '.eps'] = E;
+
+      // 三个状态位的新值（推理 / 学习）
+      const mu1 = pr.temp('mu_hat' + l, sh(1, Du));
+      const th1 = pr.temp('th_hat' + l, sh(Du, Dd));
+      const be1 = pr.temp('be_hat' + l, sh(1, Dd));
+      if (g) {
+        if (!same(g.shape, sh(1, Dd))) bad(n, `g 形状不符: ${fmtShape(g.shape)} vs ${fmtShape(sh(1, Dd))}`);
+        const dmu = pr.temp('dmu' + l, sh(1, Du));
+        pr.mmtb(g, Tt, dmu, false, PH.INFER);      // g·θᵀ
+        pr.sub(dmu, E, dmu, PH.INFER);             // − ε_l
+        pr.copy(M, mu1, PH.INFER);
+        pr.axpy(num(spec.lrMu, 0.1), dmu, mu1, PH.INFER);   // μ′ = μ + η(gθᵀ − ε)
+        const dT = pr.temp('dT' + l, sh(Du, Dd));
+        pr.mmta(M, g, dT, false, PH.LEARN);        // μᵀg
+        pr.copy(Tt, th1, PH.LEARN);
+        pr.axpy(num(spec.lrT, 0.01), dT, th1, PH.LEARN);
+        pr.copy(B, be1, PH.LEARN);
+        pr.axpy(num(spec.lrB, 0.01), g, be1, PH.LEARN);
+      } else {
+        pr.copy(M, mu1, PH.PREDICT);
+        pr.copy(Tt, th1, PH.PREDICT);
+        pr.copy(B, be1, PH.PREDICT);
+      }
+      T[n.id + '.mu1'] = mu1;
+      T[n.id + '.th1'] = th1;
+      T[n.id + '.be1'] = be1;
+    }
+
+    // 展开所有有输出的节点（深度优先，自动处理依赖）
+    for (const n of nodes) emit(n);
+
+    // 状态写回：某个 op/EM 的输出连到状态的 in ⇒ 把新值赋值进去
+    // （必须放在所有节点展开之后：写回要用到本步刚算出来的值）
+    for (const n of nodes) {
+      const c = LIBMAP[n.type];
+      if (!c.state) continue;
+      const e = inc[n.id + '.in'];
+      if (!e) continue;
+      const src = byId[e.from[0]];
+      if (!src) continue;
+      const st = outOf(src, e.from[1]);
+      if (!st || st.id === T[n.id + '.out'].id) continue;   // 已经原地写进去了，不用再拷
+      if (!same(st.shape, T[n.id + '.out'].shape)) {
+        errors.push({ node: n.id, msg: `写回形状不符: ${fmtShape(st.shape)} → ${fmtShape(T[n.id + '.out'].shape)}` });
+        continue;
+      }
+      pr.copy(st, T[n.id + '.out'], pr.lastPhase(st));
+    }
+
+    // 监视组件：记下它要看的那块张量（只显示，不参与计划）
+    const views = {};
+    for (const n of spec.nodes) {
+      const c = LIBMAP[n.type];
+      if (!c || !c.view) continue;
+      const e = inc[n.id + '.v'];
+      if (!e) continue;
+      const src = byId[e.from[0]];
+      if (!src) continue;
+      const t = outOf(src, e.from[1]);
+      if (t) views[n.id] = t;
+    }
+
+    if (!errors.length) pr.plan(64, opts.reuse !== false);
+    else pr.total = 0;
+
+    return { pr, errors, T, D, L, views };
+  }
+
+  function num(v, dflt) { const x = v == null ? dflt : +v; return isFinite(x) ? x : dflt; }
+
+  // 初始化：顺序固定，保证和导出的 C++ 同一组数
+  // 按组件类型决定初始化：μ/θ 抽 U(−0.1,0.1)，β 填 0.05，其余清零。
+  // 名字只用来对号，所以用户把 M1 改名成 alpha 也照样能跑。
+  function stateTypes(spec) {
+    const m = {};
+    for (const n of (spec && spec.nodes) || []) {
+      const c = LIBMAP[n.type];
+      if (c && c.state) m[tname(n)] = n.type;
+    }
+    return m;
+  }
+
+  function initProgram(pr, spec) {
+    pr.seed(spec.seed == null ? 42 : spec.seed);
+    const types = stateTypes(spec);
+    const kind = t => types[t.name] || (/^M\d+$/.test(t.name) ? 'M' : /^T\d+$/.test(t.name) ? 'T' : /^B\d+$/.test(t.name) ? 'B' : '');
+    const states = pr.tensors.filter(t => t.isState);
+    for (const t of states) {
+      const k = kind(t);
+      if (k === 'M' || k === 'T') pr.fillUniform(t, -0.1, 0.1);
+      else if (k === 'B') pr.fill(t, 0.05);
+      else pr.fill(t, 0);
+    }
+  }
+
+  function metrics(pr) {
+    const byPhase = [0, 0, 0];
+    const byKind = {};
+    for (const o of pr.ops) {
+      byPhase[o.phase]++;
+      byKind[o.k] = (byKind[o.k] || 0) + 1;
+    }
+    return { ops: pr.ops.length, byPhase, byKind, stateBytes: pr.stateBytes, tempBytes: pr.tempBytes,
+             total: pr.total, tensors: pr.tensors.length };
+  }
+
+  // 自由能 F = Σ_l Σ_i ε_l[i]²（Σ_l 取单位阵）
+  function freeEnergy(pr, spec) {
+    const types = spec ? stateTypes(spec) : {};
+    let F = 0;
+    const perLayer = [];
+    for (const t of pr.tensors) {
+      if (!t.isState) continue;
+      const isE = types[t.name] ? types[t.name] === 'E' : /^E\d+$/.test(t.name);
+      if (!isE) continue;
+      const p = pr.ptr(t);
+      let s = 0;
+      for (let i = 0; i < t.shape.n; i++) s += pr.buf[p + i] * pr.buf[p + i];
+      perLayer.push({ name: t.name, e: s });
+      F += s;
+    }
+    return { F, perLayer };
+  }
+
+  // ─────────────────────────── C++ 导出 ───────────────────────────
+  // 直接按"已规划的程序"逐张量、逐 op 生成，因此永远和图上一致。
+  function emitCpp(spec, name) {
+    const { pr, errors } = lower(spec, { reuse: true });
+    if (errors.length) return { text: '// 图有错误，无法导出：\n' + errors.map(e => '//   ' + e.msg).join('\n'), errors };
+    const D = spec.dims, L = D.length - 1;
+    const varOf = {}, refOf = {};
+    pr.tensors.forEach((t, i) => {
+      varOf[t.name] = 't' + i;
+      refOf[t.name] = (t.isState ? 'm.' : '') + 't' + i;   // 状态是成员，临时量是局部变量
+    });
+    const L2 = [];
+    const p = s => L2.push(s);
+
+    p(`// 由 pc-studio 导出 —— ${pr.tensors.filter(t => t.isState).length} 个状态，${pr.ops.length} 个 op，arena ${pr.total} B`);
+    p('// 与界面里的图一一对应；用法见 examples/pc_basic.cpp');
+    p('#pragma once');
+    p('#include <cstdint>');
+    p('#include "engine/pc.hpp"');
+    p('');
+    p(`namespace gen_${name || 'model'} {`);
+    p(`inline constexpr int NL = ${L};`);
+    p(`inline constexpr int D[${D.length}] = {${D.join(', ')}};`);
+    p('');
+    p('struct Model {');
+    p('    pc::Program pr;');
+    for (const t of pr.tensors) if (t.isState) p(`    pc::Tens ${varOf[t.name]};   // ${t.name} ${fmtShape(t.shape)}`);
+    p('};');
+    p('');
+    p('inline void build(Model& m) {');
+    p('    pc::Program& pr = m.pr;');
+    for (const t of pr.tensors) {
+      const ctor = t.isState ? 'state' : 'temp';
+      const decl = t.isState ? `m.${varOf[t.name]} =` : `auto ${varOf[t.name]} =`;
+      p(`    ${decl} pr.${ctor}("${t.name}", pc::sh(${t.shape.r}, ${t.shape.c}));`);
+    }
+    p('');
+    for (const o of pr.ops) {
+      const A = n => (n && n.id >= 0 ? refOf[n.name] : '{}');
+      const ph = o.phase === 0 ? '' : `, pc::PH_${o.phase === 1 ? 'INFER' : 'LEARN'}`;
+      const acc = o.acc ? ', true' : '';
+      switch (o.k) {
+        case 'CLEAR': p(`    pr.clear(${A(o.d)}${ph});`); break;
+        case 'COPY': p(`    pr.copy(${A(o.a)}, ${A(o.d)}${ph});`); break;
+        case 'ADD': p(`    pr.add(${A(o.a)}, ${A(o.b)}, ${A(o.d)}${ph});`); break;
+        case 'SUB': p(`    pr.sub(${A(o.a)}, ${A(o.b)}, ${A(o.d)}${ph});`); break;
+        case 'MUL': p(`    pr.mul(${A(o.a)}, ${A(o.b)}, ${A(o.d)}${ph});`); break;
+        case 'SCALE': p(`    pr.mulc(${o.scalar}f, ${A(o.a)}, ${A(o.d)}${ph});`); break;
+        case 'TANH': p(`    pr.tanh(${A(o.a)}, ${A(o.d)}${ph});`); break;
+        case 'ONE_MINUS_SQ': p(`    pr.one_minus_sq(${A(o.a)}, ${A(o.d)}${ph});`); break;
+        case 'CLAMP': p(`    pr.clamp(${A(o.a)}, ${A(o.d)}, ${o.scalar}f${ph});`); break;
+        case 'AXPY': p(`    pr.axpy(${o.scalar}f, ${A(o.a)}, ${A(o.d)}${ph});`); break;
+        // acc 必须显式传：否则相位实参会落进 acc 形参（bool 隐式转换）
+        case 'SUM_ROWS': p(`    pr.sum_rows(${A(o.a)}, ${A(o.d)}, ${o.acc ? 'true' : 'false'}${ph});`); break;
+        case 'MATMUL_NN': p(`    pr.mm(${A(o.a)}, ${A(o.b)}, ${A(o.d)}, ${o.acc ? 'true' : 'false'}${ph});`); break;
+        case 'MATMUL_TN': p(`    pr.mmta(${A(o.a)}, ${A(o.b)}, ${A(o.d)}, ${o.acc ? 'true' : 'false'}${ph});`); break;
+        case 'MATMUL_NT': p(`    pr.mmtb(${A(o.a)}, ${A(o.b)}, ${A(o.d)}, ${o.acc ? 'true' : 'false'}${ph});`); break;
+      }
+    }
+    p('    pr.plan(64, true);');
+    p('}');
+    p('');
+    p('// 初始化顺序与界面一致（同一个种子 ⇒ 同一组初值）');
+    p('inline void init(Model& m, uint32_t seed = 42) {');
+    p('    auto& pr = m.pr;');
+    p('    pr.seed(seed);');
+    const types = stateTypes(spec);
+    const kindOf = n => types[n] || (/^M\d+$/.test(n) || /^T\d+$/.test(n) ? 'M' : /^B\d+$/.test(n) ? 'B' : '');
+    for (const t of pr.tensors) {
+      if (!t.isState) continue;
+      const k = kindOf(t.name);
+      if (k === 'M' || k === 'T') p(`    pr.fill_uniform(m.${varOf[t.name]}, -0.1f, 0.1f);`);
+      else if (k === 'B') p(`    pr.fill(m.${varOf[t.name]}, 0.05f);`);
+      else p(`    pr.fill(m.${varOf[t.name]}, 0.f);`);
+    }
+    p('}');
+    p('');
+    p(`// 每步：相位 0/1 全跑；每 ${spec.nInfer || 10} 步跑一次相位 2（学习）`);
+    p('inline void step(Model& m, int it) {');
+    p(`    m.pr.run(it % ${spec.nInfer || 10} == ${(spec.nInfer || 10) - 1} ? pc::PH_LEARN : pc::PH_INFER);`);
+    p('}');
+    p('');
+    p('}  // namespace');
+    return { text: L2.join('\n'), errors };
+  }
+
+  // ─────────────────────────── 预设图 ───────────────────────────
+  // 每一层（stage c：第 c 层被第 c+1 层预测）用一个横向条带画出来：
+  //
+  //   M[c+1] ┐                                                        ┌ g[c] ┐
+  //   T[c+1] ┤→ EM[c+1] → P[c] → SUB → E[c] ┐                        │      │
+  //   B[c+1] ┘                            └→ ONE_MINUS_SQ → D[c] ┴→ MUL ┘
+  //
+  // 状态节点的左边是写、右边是读；EM 的 μ′/θ′/β′ 连回状态左边完成更新。
+  function presetLayers(dims) {
+    const D = dims || [64, 1024];
+    const L = D.length;
+    const nodes = [], edges = [];
+    const X = { st: 20, em: 200, pred: 450, sub: 630, err: 810 };
+    const DY = 132;                    // 同列节点的纵向间距
+    // 从顶层往下排；第 1 层那条带最高（它还要放 x 和 M[0]）
+    // 顶层还要多放一个"本层误差 ε_L"状态，所以再高一点
+    function bandH(l) { return (l === 1 ? DY * 5 + 40 : DY * 3 + 40) + (l === L - 1 ? 120 : 0); }
+    const yOf = {};
+    for (let l = L - 1; l >= 1; l--) {
+      let y = 30;
+      for (let k = L - 1; k > l; k--) y += bandH(k);
+      yOf[l] = y;
+    }
+    const uid = (a, b) => a + b;
+
+    for (let l = L - 1; l >= 1; l--) {
+      const y = yOf[l], c = l - 1;
+      // 状态列
+      if (l === 1) {
+        nodes.push({ id: 'x', type: 'x', name: 'x', shape: { r: 1, c: D[0] }, pos: { x: X.st, y: y } });
+        nodes.push({ id: 'M0', type: 'M', l: 0, name: 'M0', shape: { r: 1, c: D[0] }, pos: { x: X.st, y: y + DY } });
+      }
+      const stBase = l === 1 ? y + DY * 2 : y;
+      nodes.push({ id: uid('M', l), type: 'M', l: l, name: 'M' + l, shape: { r: 1, c: D[l] }, pos: { x: X.st, y: stBase } });
+      nodes.push({ id: uid('T', l), type: 'T', l: l, name: 'T' + l, shape: { r: D[l], c: D[l - 1] }, pos: { x: X.st, y: stBase + DY } });
+      nodes.push({ id: uid('B', l), type: 'B', l: l, name: 'B' + l, shape: { r: 1, c: D[l - 1] }, pos: { x: X.st, y: stBase + DY * 2 } });
+      nodes.push({ id: uid('EM', l), type: 'EM', l: l, pos: { x: X.em, y: y } });
+      // 预测链
+      nodes.push({ id: uid('P', c), type: 'V', name: 'P' + c, shape: { r: 1, c: D[c] }, pos: { x: X.pred, y: y + 40 } });
+      nodes.push({ id: uid('DM', c), type: 'ONE_MINUS_SQ', pos: { x: X.pred, y: y + 180 } });
+      nodes.push({ id: uid('SUB', c), type: 'SUB', pos: { x: X.sub, y: y + 40 } });
+      nodes.push({ id: uid('D', c), type: 'V', name: 'd' + c, shape: { r: 1, c: D[c] }, pos: { x: X.sub, y: y + 180 } });
+      nodes.push({ id: uid('E', c), type: 'E', l: c, name: 'E' + c, shape: { r: 1, c: D[c] }, pos: { x: X.err, y: y + 40 } });
+      nodes.push({ id: uid('MUL', c), type: 'MUL', pos: { x: X.err, y: y + 180 } });
+      nodes.push({ id: uid('G', c), type: 'V', name: 'g' + c, shape: { r: 1, c: D[c] }, pos: { x: X.sub, y: y + 300 } });
+
+      for (const [k, st] of [['mu', 'M'], ['th', 'T'], ['be', 'B']]) {
+        edges.push({ from: [st + l, 'out'], to: ['EM' + l, k] });
+        edges.push({ from: ['EM' + l, k + '1'], to: [st + l, 'in'] });
+      }
+      edges.push({ from: ['EM' + l, 'f'], to: ['P' + c, 'in'] });
+      if (l === L - 1) {
+        // 顶层没有上层预测 ⇒ ε_l 由 EM 直接给出（ε = ω·μ），单独挂一个误差状态方便观察
+        nodes.push({ id: 'Etop' + l, type: 'E', l: l, name: 'E' + l, shape: { r: 1, c: D[l] }, pos: { x: X.pred, y: y + 400 } });
+        edges.push({ from: ['EM' + l, 'eps'], to: ['Etop' + l, 'in'] });
+      }
+      edges.push({ from: ['M' + c, 'out'], to: ['SUB' + c, 'a'] });
+      edges.push({ from: ['P' + c, 'out'], to: ['SUB' + c, 'b'] });
+      edges.push({ from: ['SUB' + c, 'd'], to: ['E' + c, 'in'] });
+      edges.push({ from: ['P' + c, 'out'], to: ['DM' + c, 'a'] });
+      edges.push({ from: ['DM' + c, 'd'], to: ['D' + c, 'in'] });
+      edges.push({ from: ['E' + c, 'out'], to: ['MUL' + c, 'a'] });
+      edges.push({ from: ['D' + c, 'out'], to: ['MUL' + c, 'b'] });
+      edges.push({ from: ['MUL' + c, 'd'], to: ['G' + c, 'in'] });
+      edges.push({ from: ['G' + c, 'out'], to: ['EM' + l, 'g'] });
+      if (l + 1 < L) edges.push({ from: ['EM' + (l + 1), 'f'], to: ['EM' + l, 'fa'] });
+    }
+    // 输入 → 第 0 层
+    edges.push({ from: ['x', 'out'], to: ['M0', 'in'] });
+    return { dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, nodes, edges };
+  }
+
+  function presetBasic(dims) { return presetLayers(dims || [64, 1024]); }
+  function presetDeep(dims) { return presetLayers(dims || [64, 512, 256]); }
+
+  // 单层：只有 x 和 M[0]，没有 EM（用来看"没有隐藏层时会怎样"）
+  function presetSingle(dims) {
+    const D = dims || [64];
+    return {
+      dims: D, lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02,
+      nodes: [{ id: 'x', type: 'x', name: 'x', shape: { r: 1, c: D[0] }, pos: { x: 60, y: 200 } },
+              { id: 'M0', type: 'M', l: 0, name: 'M0', shape: { r: 1, c: D[0] }, pos: { x: 240, y: 200 } }],
+      edges: [{ from: ['x', 'out'], to: ['M0', 'in'] }],
+    };
+  }
+
+  return { sh, same, fmtShape, MT, Program, LIB, LIBMAP, label, tname, portShape, stateShape, edgeSource, lower, initProgram,
+           metrics, freeEnergy, execOp, runPhase, emitCpp, PH, PHNAME,
+           presetBasic, presetSingle, presetDeep };
+});
+
+</script>
+<script>
+(function(){
+'use strict';
+const $ = s => document.querySelector(s);
+const el = (t, cls, html) => { const e = document.createElement(t); if (cls) e.className = cls; if (html != null) e.innerHTML = html; return e; };
+
+// ───────────────────────── 状态 ─────────────────────────
+let spec = PC.presetBasic([64, 1024]);
+let view = { x: 40, y: 20, k: 0.8 };
+let sel = null;              // 主选中（检视器看这个）
+let selSet = new Set();      // 当前选中的全部节点
+let rt = null;           // { pr, T, errors }
+let it = 0;
+let running = false;
+let hist = [];           // F 曲线
+let lastF = 0, lastE0 = 0;
+let data = null;         // 数据集
+let sampleIdx = 0;
+const PRESETS = [
+  { id: 'basic', name: '基本模型（2 层 + EM）', make: () => PC.presetBasic([64, 1024]) },
+  { id: 'deep', name: '三层（EM 串联）', make: () => PC.presetDeep([64, 512, 256]) },
+  { id: 'single', name: '只有输入层（退化）', make: () => PC.presetSingle([64]) },
+];
+
+// ───────────────────────── 设置（localStorage 记住） ─────────────────────────
+const SET_KEY = 'pcstudio.settings';
+let settings = Object.assign({ wheel: 0.15, grid: true, cell: 4 }, (() => {
+  try { return JSON.parse(localStorage.getItem(SET_KEY) || '{}'); } catch (e) { return {}; }
+})());
+function saveSettings() { try { localStorage.setItem(SET_KEY, JSON.stringify(settings)); } catch (e) {} }
+function applySettings() {
+  const st = $('#stage');
+  if (st) st.classList.toggle('nogrid', !settings.grid);
+}
+
+// ───────────────────────── 数据集 ─────────────────────────
+function makePattern(D0, r) {
+  const v = new Float32Array(D0);
+  for (let f = 0; f < 3; f++) {
+    const a = r.uniform(-1, 1), b = r.uniform(-1, 1), freq = 1 + Math.floor(r.uniform(0, 3));
+    for (let i = 0; i < D0; i++) v[i] += a * Math.sin(2 * Math.PI * freq * i / D0) + b * Math.cos(2 * Math.PI * (freq + 1) * i / D0);
+  }
+  let m = 0; for (const x of v) m = Math.max(m, Math.abs(x));
+  for (let i = 0; i < D0; i++) v[i] /= (m || 1);
+  return v;
+}
+
+function makeDataset(D0, n, seed) {
+  const r = new PC.MT(seed || 7), out = [];
+  for (let k = 0; k < n; k++) {
+    // 由几个随机频率的正弦叠加出的平滑模式，归一化到 [-1,1]
+    const v = new Float32Array(D0);
+    for (let f = 0; f < 3; f++) {
+      const a = r.uniform(-1, 1), b = r.uniform(-1, 1), freq = 1 + Math.floor(r.uniform(0, 3));
+      for (let i = 0; i < D0; i++) v[i] += a * Math.sin(2 * Math.PI * freq * i / D0) + b * Math.cos(2 * Math.PI * (freq + 1) * i / D0);
+    }
+    let m = 0; for (const x of v) m = Math.max(m, Math.abs(x));
+    for (let i = 0; i < D0; i++) v[i] /= (m || 1);
+    out.push(v);
+  }
+  return out;
+}
+
+// ───────────────────────── 组件库 ─────────────────────────
+function buildPalette() {
+  const left = $('#lc-body');
+  left.innerHTML = '';
+  const groups = {};
+  for (const c of PC.LIB) (groups[c.group] = groups[c.group] || []).push(c);
+  for (const g of Object.keys(groups)) {
+    left.appendChild(el('div', 'grp', g));
+    for (const c of groups[g]) {
+      const d = el('div', 'item');
+      d.draggable = true;
+      d.innerHTML = `<span class="dot" style="background:${c.color}"></span><span class="t">${c.name}</span>`;
+      d.title = c.note || '';
+      d.addEventListener('dragstart', e => { e.dataTransfer.setData('text/plain', c.id); e.dataTransfer.effectAllowed = 'copy'; });
+      d.addEventListener('click', () => addNode(c.id, null));
+      left.appendChild(d);
+    }
+  }
+  // 折叠 / 设置浮窗
+  $('#lc-head').addEventListener('click', () => {
+    const on = $('#lc-body').classList.toggle('open');
+    $('#lc-head').classList.toggle('open', on);
+  });
+  $('#ls-head').addEventListener('click', () => $('#setpop').classList.toggle('on'));
+  $('#set-close').addEventListener('click', () => $('#setpop').classList.remove('on'));
+  buildSettings();
+}
+
+function buildSettings() {
+  const box = $('#set-body');
+  box.innerHTML = '';
+
+  const r1 = el('div', 'setrow');
+  r1.appendChild(el('label', null, '滚轮灵敏度'));
+  const s1 = el('input'); s1.type = 'range'; s1.min = 3; s1.max = 40; s1.step = 1;
+  s1.value = Math.round(settings.wheel * 100);
+  const v1 = el('b', null, settings.wheel.toFixed(2));
+  s1.addEventListener('input', () => {
+    settings.wheel = +s1.value / 100;
+    v1.textContent = settings.wheel.toFixed(2);
+    saveSettings();
+  });
+  r1.appendChild(s1); r1.appendChild(v1);
+  box.appendChild(r1);
+
+  const r2 = el('div', 'setrow');
+  r2.appendChild(el('label', null, '显示网格'));
+  const c2 = el('input'); c2.type = 'checkbox'; c2.checked = settings.grid;
+  c2.addEventListener('change', () => { settings.grid = c2.checked; applySettings(); saveSettings(); });
+  r2.appendChild(c2);
+  box.appendChild(r2);
+
+  const r3 = el('div', 'setrow');
+  r3.appendChild(el('label', null, '监视格'));
+  const s3 = el('input'); s3.type = 'range'; s3.min = 2; s3.max = 8; s3.step = 1;
+  s3.value = settings.cell || 4;
+  const v3 = el('b', null, (settings.cell || 4) + 'px');
+  s3.addEventListener('input', () => {
+    settings.cell = +s3.value; v3.textContent = settings.cell + 'px'; saveSettings(); paintRun();
+  });
+  r3.appendChild(s3); r3.appendChild(v3);
+  box.appendChild(r3);
+
+  box.appendChild(el('div', 'hint', '左键拖动＝框选，右键拖动＝平移，滚轮＝缩放<br>右键点组件＝删除 / 复制 / 粘贴'));
+}
+
+let uid = 100;
+// 状态组件：默认名字不重复；形状用户可以随时改（算子会按连线校验）
+const DEFAULT_SHAPE = { x: [1, 64], M: [1, 64], T: [64, 64], B: [1, 64], E: [1, 64], V: [1, 64] };
+function usedNames() {
+  const s = new Set();
+  for (const n of spec.nodes) {
+    const c = PC.LIBMAP[n.type];
+    if (c && c.state) s.add(PC.tname(n));
+  }
+  return s;
+}
+function uniqueName(base) {
+  const used = usedNames();
+  if (!used.has(base)) return base;
+  let i = 2;
+  while (used.has(base + '_' + i)) i++;
+  return base + '_' + i;
+}
+function addNode(type, pos, silent) {
+  const c = PC.LIBMAP[type];
+  const n = { id: type.toLowerCase() + (uid++), type: type };
+  if (c.params) for (const p of c.params) {
+    if (c.defaults && c.defaults[p] !== undefined) n[p] = c.defaults[p];
+  }
+  if (c.state) {
+    const d = DEFAULT_SHAPE[type] || [1, 64];
+    n.name = uniqueName(type === 'x' ? 'x' : (type === 'V' ? 'v' : type));
+    n.shape = { r: d[0], c: d[1] };
+    if (type === 'M' || type === 'T' || type === 'B' || type === 'E') n.l = 1;
+  }
+  if (type === 'EM') n.l = 1;
+  if (pos) n.pos = pos;
+  else {
+    const maxX = spec.nodes.reduce((a, x) => Math.max(a, x.pos ? x.pos.x : 0), 0);
+    n.pos = { x: maxX + 190, y: 60 };
+  }
+  spec.nodes.push(n);
+  resetRun();
+  if (!silent) selectNode(n.id);
+  return n;
+}
+
+// ───────────────────────── 节点几何 ─────────────────────────
+const NH = 30, ROW = 20, PAD = 6, FT = 18;
+function monitorSize() { return 96; }
+
+function infoRows(n) {
+  if (n.type === 'MON') return ['把一个张量画成方阵'];
+  if (n.type === 'EM') {
+    const out = [];
+    out.push(`f${n.l} = tanh(μ${n.l}·θ${n.l}ᵀ + β${n.l})`.replace('ᵀ', ''));
+    out.push(`ε${n.l} = μ${n.l} − f${n.l}`);
+    out.push(`μ = μ + η(g·θᵀ − ε)`);
+    out.push(`θ = θ + η·μᵀg ,  β = β + η·g`);
+    return out;
+  }
+  if (n.type === 'M') return ['后验状态（行向量）'];
+  if (n.type === 'T') return ['权重状态'];
+  if (n.type === 'B') return ['偏置状态'];
+  if (n.type === 'E') return ['误差状态'];
+  return null;
+}
+function geom(n) {
+  const c = PC.LIBMAP[n.type];
+  const ins = (c.ins || []), outs = (c.outs || []);
+  const info = infoRows(n) || [];
+  const rows = ins.length + outs.length;
+  const w = n.type === 'EM' ? 246 : 152;
+  const monH = n.type === 'MON' ? monitorSize() + 12 : 0;
+  const h = NH + PAD * 2 + rows * ROW + (info.length ? info.length * 16 + 6 : 0) + FT + monH;
+  const pin = (i, dir) => ({ x: dir === 'in' ? 0 : w, y: NH + PAD + i * ROW + ROW / 2 });
+  return {
+    w, h,
+    info,
+    ins: ins.map((p, i) => ({ k: p.k, name: p.name || p.k, opt: !!p.optional, ...pin(i, 'in') })),
+    outs: outs.map((p, i) => ({ k: p.k, name: p.name || p.k, ...pin(ins.length + i, 'out') })),
+  };
+}
+
+// ───────────────────────── 自动布局 ─────────────────────────
+// 前向边（读）决定层次，写回边（→ state.in）是反向的，不参与分层。
+function autoLayout() {
+  const nodes = spec.nodes, byId = {};
+  for (const n of nodes) byId[n.id] = n;
+  const fwd = spec.edges.filter(e => e.to[1] !== 'in' && byId[e.from[0]] && byId[e.to[0]]);
+  const preds = {}, succs = {};
+  for (const n of nodes) { preds[n.id] = []; succs[n.id] = []; }
+  for (const e of fwd) { preds[e.to[0]].push(e.from[0]); succs[e.from[0]].push(e.to[0]); }
+  // 最长路径分层（图有环也无所谓：限制迭代次数）
+  const depth = {};
+  for (const n of nodes) depth[n.id] = 0;
+  for (let pass = 0; pass < nodes.length + 2; pass++) {
+    let changed = false;
+    for (const e of fwd) {
+      const d = depth[e.from[0]] + 1;
+      if (d > depth[e.to[0]] && d < nodes.length + 1) { depth[e.to[0]] = d; changed = true; }
+    }
+    if (!changed) break;
+  }
+  // 输入源固定在 0 层
+  for (const n of nodes) if (!preds[n.id].length && !succs[n.id].length) depth[n.id] = 0;
+  const cols = {};
+  for (const n of nodes) (cols[depth[n.id]] = cols[depth[n.id]] || []).push(n);
+  const COLW = 250, ROWGAP = 26;
+  let x = 40;
+  for (const d of Object.keys(cols).map(Number).sort((a, b) => a - b)) {
+    const col = cols[d];
+    // 同一层里按"上游的平均纵坐标"排序，减少交叉
+    const key = n => {
+      const p = preds[n.id];
+      if (!p.length) return 0;
+      return p.reduce((acc, id) => acc + (depth[id] * 1000 + (byId[id]._ord || 0)), 0) / p.length;
+    };
+    col.forEach((n, i) => { n._ord = i; });
+    col.sort((a, b) => key(a) - key(b));
+    let y = 60;
+    let maxW = 0;
+    for (const n of col) {
+      const g = geom(n);
+      n.pos = { x: x, y: y };
+      y += g.h + ROWGAP;
+      maxW = Math.max(maxW, g.w);
+    }
+    x += Math.max(COLW, maxW + 60);
+  }
+}
+
+// ───────────────────────── 渲染 ─────────────────────────
+function applyView() {
+  $('#world').style.transform = `translate(${view.x}px,${view.y}px) scale(${view.k})`;
+  const pct = Math.round(view.k * 100);
+  const r = $('#z-range'), v = $('#z-val');
+  if (r) r.value = Math.max(20, Math.min(240, pct));
+  if (v) v.textContent = pct + '%';
+}
+
+function rebuild() {
+  // 只画图：rt 由 resetRun() 负责 lower + 初始化。
+  // （这里曾经重新 lower 一次，等于把训练好的状态清零，表现为 M[1]/T[1] 全部塌成 0）
+  if (!rt) rt = PC.lower(spec);
+  // 2) 节点
+  const host = $('#nodes');
+  host.innerHTML = '';
+  const errNodes = new Set((rt.errors || []).map(e => e.node));
+  for (const n of spec.nodes) {
+    const g = geom(n);
+    const d = el('div', 'node' + (selSet.has(n.id) ? ' sel' : '') + (errNodes.has(n.id) ? ' err' : ''));
+    d.style.left = n.pos.x + 'px';
+    d.style.top = n.pos.y + 'px';
+    d.style.width = g.w + 'px';
+    d.style.height = g.h + 'px';
+    d.dataset.id = n.id;
+    const c = PC.LIBMAP[n.type];
+    const hd = el('div', 'hd');
+    hd.innerHTML = `<span class="dot" style="background:${c.color}"></span><span class="nm">${PC.label(n)}</span>` +
+                   `<span class="tag">${n.type === 'EM' ? 'MACRO' : (c.state ? 'STATE' : 'OP')}</span>`;
+    hd.addEventListener('mousedown', e => startDragNode(e, n));
+    d.appendChild(hd);
+    const bd = el('div', 'bd');
+    for (const p of g.ins) {
+      const r = el('div', 'port in');
+      r.innerHTML = `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="in" style="top:4.5px"></span>` +
+                    `<span class="lb">${p.name}</span>`;
+      bd.appendChild(r);
+    }
+    for (const p of g.outs) {
+      const r = el('div', 'port out');
+      r.innerHTML = `<span class="lb">${p.name}</span>` +
+                    `<span class="pin" data-node="${n.id}" data-port="${p.k}" data-dir="out" style="top:4.5px"></span>`;
+      bd.appendChild(r);
+    }
+    for (const line of g.info) {
+      const r = el('div', 'note', line);
+      bd.appendChild(r);
+    }
+    if (n.type === 'MON') {
+      const g2 = el('div', 'mon');
+      g2.dataset.mon = n.id;
+      g2.style.height = monitorSize() + 'px';
+      g2.style.alignContent = 'center';
+      g2.style.justifyContent = 'center';
+      bd.appendChild(g2);
+    }
+    d.appendChild(bd);
+    d.appendChild(el('div', 'ft', footText(n)));
+    d.addEventListener('mousedown', e => {
+      if (e.target !== d || e.button !== 0) return;
+      if (e.shiftKey || e.metaKey || e.ctrlKey) toggleSelect(n.id); else selectNode(n.id);
+    });
+    d.addEventListener('contextmenu', e => {
+      e.preventDefault(); e.stopPropagation();
+      if (!selSet.has(n.id)) selectNode(n.id);
+      showCtx(e.clientX, e.clientY, true);
+    });
+    host.appendChild(d);
+  }
+  // 3) 连线
+  drawWires();
+  // 4) 端口事件
+  document.querySelectorAll('.pin').forEach(pin => {
+    pin.addEventListener('mousedown', e => { e.stopPropagation(); startWire(e, pin.dataset.node, pin.dataset.port, pin.dataset.dir); });
+  });
+  updateStat();
+  renderInspector();
+  if (rt && rt.pr && rt.pr.planned) updateNodeValues();
+}
+
+function footText(n) {
+  const e = (rt.errors || []).filter(x => x.node === n.id)[0];
+  if (e) return `<span style="color:var(--bad)">${e.msg.slice(0, 26)}</span>`;
+  const c = PC.LIBMAP[n.type];
+  if (n.type === 'MON') {
+    const t = rt && rt.views && rt.views[n.id];
+    return t ? `看 ${t.name}` : '没接张量';
+  }
+  if (c.state) {
+    const s = PC.stateShape(spec, n);
+    return `${PC.fmtShape(s)} · ${s.n * 4} B`;
+  }
+  if (n.type === 'EM') return `${n.l >= 1 ? `ε${n.l}, θ${n.l}, β${n.l}` : ''}`;
+  return 'op';
+}
+
+function pinPos(nodeId, port, dir) {
+  const n = spec.nodes.find(x => x.id === nodeId);
+  if (!n) return null;
+  const g = geom(n);
+  const list = dir === 'in' ? g.ins : g.outs;
+  const p = list.find(x => x.k === port);
+  if (!p) return null;
+  return { x: n.pos.x + p.x, y: n.pos.y + p.y };
+}
+
+function bez(a, b) {
+  const dx = Math.max(30, Math.abs(b.x - a.x) * 0.5);
+  return `M${a.x},${a.y} C${a.x + dx},${a.y} ${b.x - dx},${b.y} ${b.x},${b.y}`;
+}
+
+function drawWires() {
+  const svg = $('#wires');
+  svg.innerHTML = '';
+  for (const e of spec.edges) {
+    const a = pinPos(e.from[0], e.from[1], 'out');
+    const b = pinPos(e.to[0], e.to[1], 'in');
+    if (!a || !b) continue;
+    const p = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+    p.setAttribute('d', bez(a, b));
+    const isState = /^[MTBE]$/.test(e.to[1]) || e.to[1] === 'in';
+    p.setAttribute('stroke', e.to[1] === 'in' ? '#e0a458' : '#4a7fb5');
+    p.setAttribute('stroke-width', '1.6');
+    p.setAttribute('fill', 'none');
+    p.setAttribute('opacity', '.85');
+    if (e.to[1] === 'in') p.setAttribute('stroke-dasharray', '5 3');
+    p.classList.add('hit');
+    p.__edge = e;
+    if (mode === 'scissor') p.style.pointerEvents = 'none';
+    p.addEventListener('mouseenter', () => { if (mode !== 'scissor') p.setAttribute('stroke-width', '3'); });
+    p.addEventListener('mouseleave', () => p.setAttribute('stroke-width', '1.6'));
+    p.addEventListener('click', ev => { ev.stopPropagation(); removeEdge(e); });
+    p.addEventListener('dblclick', ev => { ev.stopPropagation(); removeEdge(e); });
+    svg.appendChild(p);
+  }
+}
+
+// 点到线段的距离（剪刀命中判定）
+function segDist(px, py, x1, y1, x2, y2) {
+  const dx = x2 - x1, dy = y2 - y1;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 ? ((px - x1) * dx + (py - y1) * dy) / l2 : 0;
+  t = Math.max(0, Math.min(1, t));
+  return Math.hypot(px - (x1 + t * dx), py - (y1 + t * dy));
+}
+
+// 剪刀：用这一段的轨迹去切所有还活着的连线
+function scissorCut(x1, y1, x2, y2) {
+  let cut = 0;
+  for (const p of [...document.querySelectorAll('#wires path.hit')]) {
+    if (!p.__edge) continue;
+    const len = p.getTotalLength();
+    const step = Math.max(4, Math.min(10, len / 40));
+    let hit = false;
+    for (let d = 0; d <= len; d += step) {
+      const q = p.getPointAtLength(d);
+      // 世界坐标 → 画布坐标
+      const sx = q.x * view.k + view.x, sy = q.y * view.k + view.y;
+      if (segDist(sx, sy, x1, y1, x2, y2) < 5) { hit = true; break; }
+    }
+    if (hit) {
+      spec.edges = spec.edges.filter(e => e !== p.__edge);
+      p.remove();
+      cut++;
+    }
+  }
+  return cut;
+}
+
+function removeEdge(e) {
+  const i = spec.edges.indexOf(e);
+  if (i >= 0) { spec.edges.splice(i, 1); resetRun(); }
+}
+
+// ───────────────────────── 交互：选择 / 框选 / 平移 / 缩放 ─────────────────────────
+let drag = null;
+
+function refreshSel() {
+  document.querySelectorAll('.node').forEach(d => d.classList.toggle('sel', selSet.has(d.dataset.id)));
+}
+function setSelection(ids, primary) {
+  selSet = new Set(ids);
+  if (primary !== undefined) sel = primary;
+  else sel = ids.length ? ids[ids.length - 1] : null;
+  if (sel && !selSet.has(sel)) sel = null;
+  refreshSel(); renderInspector();
+}
+function selectNode(id) { setSelection(id ? [id] : [], id || null); }
+function toggleSelect(id) {
+  const next = new Set(selSet);
+  if (next.has(id)) { next.delete(id); if (sel === id) sel = [...next].pop() || null; }
+  else { next.add(id); sel = id; }
+  setSelection([...next], sel);
+}
+
+function startDragNode(e, n) {
+  if (e.button === 2 || e.button === 1) return;          // 右键/中键留给平移
+  if (e.button !== 0) return;
+  e.stopPropagation();
+  if (e.shiftKey || e.metaKey || e.ctrlKey) { toggleSelect(n.id); return; }
+  if (!selSet.has(n.id)) selectNode(n.id);
+  else { sel = n.id; renderInspector(); refreshSel(); }
+  const items = [...selSet].map(id => {
+    const m = spec.nodes.find(x => x.id === id);
+    return { n: m, ox: m.pos.x, oy: m.pos.y };
+  });
+  drag = { kind: 'node', sx: e.clientX, sy: e.clientY, items };
+}
+
+function startWire(e, nodeId, port, dir) {
+  drag = { kind: 'wire', from: { node: nodeId, port, dir }, sx: e.clientX, sy: e.clientY };
+  const svg = $('#wires');
+  const tmp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+  tmp.setAttribute('stroke', '#7bd88f'); tmp.setAttribute('stroke-width', '2');
+  tmp.setAttribute('fill', 'none'); tmp.setAttribute('stroke-dasharray', '4 3');
+  tmp.id = 'tmpwire';
+  svg.appendChild(tmp);
+}
+// 工具模式：'select' 默认，'scissor' 剪刀（左键划动剪线）
+let mode = 'select';
+function setMode(m) {
+  mode = m;
+  $('#stage').classList.toggle('cutting', m === 'scissor');
+  $('#btn-tool').classList.toggle('on', m === 'scissor');
+  document.querySelectorAll('#toolmenu .mi').forEach(d => d.classList.toggle('cur', d.dataset.mode === m));
+  toast(m === 'scissor' ? '剪刀：按住左键划过连线即可剪断，右键回到选择' : '选择模式');
+  closeToolMenu();
+}
+function closeToolMenu() { $('#toolmenu').classList.remove('on'); }
+
+function startPan(e) {
+  drag = { kind: 'pan', sx: e.clientX, sy: e.clientY, ox: view.x, oy: view.y, moved: false };
+  $('#stage').classList.add('panning');
+}
+
+$('#stage').addEventListener('contextmenu', e => {
+  e.preventDefault();          // 菜单在 mouseup 时才弹（避免和右键拖动平移打架）
+});
+
+// 右键单击空白画布（没有拖动）→ 弹「粘贴到这里」
+function showPasteMenu(x, y) {
+  const st = $('#stage').getBoundingClientRect();
+  const at = { x: (x - st.left - view.x) / view.k, y: (y - st.top - view.y) / view.k };
+  if (!(clip && clip.nodes.length)) return;
+  $('#ctxmenu').innerHTML = '';
+  const d = el('div', 'ci');
+  d.innerHTML = '<span>粘贴到这里</span><span class="k">⌘V</span>';
+  d.addEventListener('click', () => { hideCtx(); pasteClip(at); });
+  $('#ctxmenu').appendChild(d);
+  $('#ctxmenu').classList.add('on');
+  $('#ctxmenu').style.left = Math.min(x, innerWidth - 160) + 'px';
+  $('#ctxmenu').style.top = Math.min(y, innerHeight - 70) + 'px';
+}
+$('#stage').addEventListener('dragover', e => { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; });
+$('#stage').addEventListener('drop', e => {
+  e.preventDefault();
+  const type = e.dataTransfer.getData('text/plain');
+  if (!PC.LIBMAP[type]) return;
+  const st = $('#stage').getBoundingClientRect();
+  addNode(type, { x: (e.clientX - st.left - view.x) / view.k - 70, y: (e.clientY - st.top - view.y) / view.k - 20 });
+});
+
+$('#stage').addEventListener('mousedown', e => {
+  if (e.target.closest('#zoombar')) return;
+  if (e.button === 2 || e.button === 1) {
+    if (mode === 'scissor') { setMode('select'); return; }         // 剪刀模式下右键退出
+    startPan(e);                                                    // 右键拖动 = 移动视图（在组件上也一样）
+    drag.onNode = !!e.target.closest('.node');
+    return;
+  }
+  if (e.button !== 0) return;
+  if (e.target.closest('.node')) return;                           // 节点自己处理
+  if (!['stage', 'wires', 'nodes', 'world', 'cutpath'].includes(e.target.id)) return;
+  if (mode === 'scissor') {
+    const st = $('#stage').getBoundingClientRect();
+    drag = { kind: 'scissor', st, pts: [[e.clientX - st.left, e.clientY - st.top]], cut: 0 };
+    let cp = $('#cutpath');
+    if (!cp) {
+      cp = document.createElementNS('http://www.w3.org/2000/svg', 'path');
+      cp.id = 'cutpath';
+      cp.setAttribute('stroke', '#ef7c74'); cp.setAttribute('stroke-width', '1.5');
+      cp.setAttribute('fill', 'none'); cp.setAttribute('stroke-dasharray', '4 3');
+      cp.setAttribute('pointer-events', 'none');
+      $('#wires').appendChild(cp);
+    }
+    cp.setAttribute('d', `M ${drag.pts[0][0]} ${drag.pts[0][1]}`);
+    return;
+  }
+  // 左键拖空白 = 框选
+  const st = $('#stage').getBoundingClientRect();
+  drag = { kind: 'marquee', sx: e.clientX, sy: e.clientY, st, base: [...selSet] };
+  if (!(e.shiftKey || e.metaKey || e.ctrlKey)) setSelection([], null);
+  const m = $('#marquee');
+  m.style.display = 'block';
+  m.style.left = (e.clientX - st.left) + 'px';
+  m.style.top = (e.clientY - st.top) + 'px';
+  m.style.width = m.style.height = '0px';
+});
+
+window.addEventListener('mousemove', e => {
+  if (!drag) return;
+  if (drag.kind === 'pan') {
+    const dx = e.clientX - drag.sx, dy = e.clientY - drag.sy;
+    if (Math.abs(dx) + Math.abs(dy) > 3) drag.moved = true;
+    view.x = drag.ox + dx;
+    view.y = drag.oy + dy;
+    applyView();
+  } else if (drag.kind === 'node') {
+    const dx = (e.clientX - drag.sx) / view.k, dy = (e.clientY - drag.sy) / view.k;
+    for (const it of drag.items) {
+      it.n.pos.x = it.ox + dx;
+      it.n.pos.y = it.oy + dy;
+      const d = document.querySelector(`.node[data-id="${it.n.id}"]`);
+      if (d) { d.style.left = it.n.pos.x + 'px'; d.style.top = it.n.pos.y + 'px'; }
+    }
+    drawWires();
+  } else if (drag.kind === 'marquee') {
+    const st = drag.st;
+    const x1 = drag.sx - st.left, y1 = drag.sy - st.top;
+    const x2 = e.clientX - st.left, y2 = e.clientY - st.top;
+    const m = $('#marquee');
+    m.style.left = Math.min(x1, x2) + 'px';
+    m.style.top = Math.min(y1, y2) + 'px';
+    m.style.width = Math.abs(x2 - x1) + 'px';
+    m.style.height = Math.abs(y2 - y1) + 'px';
+  } else if (drag.kind === 'scissor') {
+    const st = drag.st;
+    const nx = e.clientX - st.left, ny = e.clientY - st.top;
+    const [px, py] = drag.pts[drag.pts.length - 1];
+    if (Math.hypot(nx - px, ny - py) < 2) return;
+    drag.pts.push([nx, ny]);
+    const cp = $('#cutpath');
+    if (cp) cp.setAttribute('d', 'M ' + drag.pts.map(p => p[0] + ' ' + p[1]).join(' L '));
+    drag.cut += scissorCut(px, py, nx, ny);
+  } else if (drag.kind === 'wire') {
+    const tmp = $('#tmpwire');
+    const a = pinPos(drag.from.node, drag.from.port, drag.from.dir);
+    const st = $('#stage').getBoundingClientRect();
+    const b = { x: (e.clientX - st.left - view.x) / view.k, y: (e.clientY - st.top - view.y) / view.k };
+    if (tmp && a) tmp.setAttribute('d', drag.from.dir === 'out' ? bez(a, b) : bez(b, a));
+  }
+});
+
+window.addEventListener('mouseup', e => {
+  if (drag && drag.kind === 'wire') {
+    const tgt = document.elementFromPoint(e.clientX, e.clientY);
+    if (tgt && tgt.classList.contains('pin')) {
+      const to = { node: tgt.dataset.node, port: tgt.dataset.port, dir: tgt.dataset.dir };
+      if (to.dir !== drag.from.dir) {
+        const from = drag.from.dir === 'out' ? drag.from : to;
+        const into = drag.from.dir === 'out' ? to : drag.from;
+        connect(from.node, from.port, into.node, into.port);
+      }
+    }
+  }
+  if (drag && drag.kind === 'marquee') {
+    const m = $('#marquee');
+    m.style.display = 'none';
+    const st = drag.st;
+    const x1 = Math.min(drag.sx, e.clientX) - st.left, y1 = Math.min(drag.sy, e.clientY) - st.top;
+    const x2 = Math.max(drag.sx, e.clientX) - st.left, y2 = Math.max(drag.sy, e.clientY) - st.top;
+    if (x2 - x1 > 3 && y2 - y1 > 3) {
+      const hit = [];
+      for (const n of spec.nodes) {
+        const g = geom(n);
+        const nx = n.pos.x * view.k + view.x, ny = n.pos.y * view.k + view.y;
+        if (nx < x2 && nx + g.w * view.k > x1 && ny < y2 && ny + g.h * view.k > y1) hit.push(n.id);
+      }
+      const merged = (e.shiftKey || e.metaKey || e.ctrlKey) ? [...new Set([...drag.base, ...hit])] : hit;
+      setSelection(merged, merged.length ? merged[merged.length - 1] : null);
+    }
+  }
+  if (drag && drag.kind === 'pan' && !drag.moved && e.button === 2 && !drag.onNode) {
+    showPasteMenu(e.clientX, e.clientY);      // 右键单击空白（没拖动）才弹粘贴菜单
+  }
+  if (drag && drag.kind === 'scissor') {
+    const cp = $('#cutpath'); if (cp) cp.remove();
+    if (drag.cut) { resetRun(); toast(`剪断 ${drag.cut} 条连线`); }
+  }
+  $('#stage').classList.remove('drag', 'panning');
+  drag = null;
+  const t = $('#tmpwire'); if (t) t.remove();
+});
+
+function connect(fn, fp, tn, tp) {
+  spec.edges = spec.edges.filter(e => !(e.to[0] === tn && e.to[1] === tp));
+  spec.edges.push({ from: [fn, fp], to: [tn, tp] });
+  resetRun();
+}
+
+function deleteSelected() {
+  if (!selSet.size) return;
+  const ids = new Set(selSet);
+  spec.nodes = spec.nodes.filter(n => !ids.has(n.id));
+  spec.edges = spec.edges.filter(x => !ids.has(x.from[0]) && !ids.has(x.to[0]));
+  setSelection([], null);
+  resetRun();
+}
+
+// ───────────────────────── 复制 / 粘贴 / 右键菜单 ─────────────────────────
+let clip = null;                       // {nodes:[…], edges:[…]}
+
+function copySelection() {
+  if (!selSet.size) { toast('先选几个组件'); return; }
+  const ids = new Set(selSet);
+  const nodes = spec.nodes.filter(n => ids.has(n.id)).map(n => JSON.parse(JSON.stringify(n)));
+  // 只复制两头都在选区里的连线
+  const edges = spec.edges.filter(e => ids.has(e.from[0]) && ids.has(e.to[0]))
+                           .map(e => JSON.parse(JSON.stringify(e)));
+  clip = { nodes, edges };
+  toast(`已复制 ${nodes.length} 个组件 · ${edges.length} 条连线`);
+}
+
+function pasteClip(at) {
+  if (!clip || !clip.nodes.length) { toast('剪贴板是空的'); return; }
+  const map = {};
+  const dx = at ? 0 : 46, dy = at ? 0 : 46;
+  const added = clip.nodes.map(n => {
+    const id = n.type.toLowerCase() + (uid++);
+    map[n.id] = id;
+    const c = JSON.parse(JSON.stringify(n));
+    c.id = id;
+    c.pos = { x: (n.pos ? n.pos.x : 0) + dx, y: (n.pos ? n.pos.y : 0) + dy };
+    if (at) c.pos = { x: at.x, y: at.y };
+    if (PC.LIBMAP[n.type].state) c.name = uniqueName(PC.tname(n));
+    return c;
+  });
+  spec.nodes.push(...added);
+  for (const e of clip.edges) {
+    if (!map[e.from[0]] || !map[e.to[0]]) continue;
+    spec.edges.push({ from: [map[e.from[0]], e.from[1]], to: [map[e.to[0]], e.to[1]] });
+  }
+  setSelection(added.map(n => n.id), added[0].id);
+  resetRun();
+  toast(`已粘贴 ${added.length} 个组件`);
+}
+
+function showCtx(x, y, forNode) {
+  const m = $('#ctxmenu');
+  m.innerHTML = '';
+  let any = false;
+  const add = (label, k, fn, dis) => {
+    any = true;
+    const d = el('div', 'ci' + (dis ? ' dis' : ''));
+    d.innerHTML = `<span>${label}</span><span class="k">${k || ''}</span>`;
+    if (!dis) d.addEventListener('click', () => { hideCtx(); fn(); });
+    m.appendChild(d);
+  };
+  if (forNode) {
+    add('删除', 'Del', deleteSelected, !selSet.size);
+    add('复制', '⌘C', copySelection, !selSet.size);
+  }
+  add('粘贴', '⌘V', () => pasteClip(), !(clip && clip.nodes.length));
+  if (!any) return;
+  m.classList.add('on');
+  const w = m.offsetWidth || 140, h = m.offsetHeight || 96;
+  m.style.left = Math.min(x, innerWidth - w - 8) + 'px';
+  m.style.top = Math.min(y, innerHeight - h - 8) + 'px';
+}
+function hideCtx() { $('#ctxmenu').classList.remove('on'); }
+document.addEventListener('mousedown', e => { if (!e.target.closest('#ctxmenu')) hideCtx(); }, true);
+
+window.addEventListener('keydown', e => {
+  const typing = /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName);
+  if (typing) return;
+  if (e.key === 'Escape') {
+    if (mode === 'scissor') setMode('select');
+    $('#toolmenu').classList.remove('on');
+    $('#filemenu').classList.remove('on');
+    $('#ctxmenu').classList.remove('on');
+    setSelection([], null);
+  }
+  if ((e.key === 'Delete' || e.key === 'Backspace') && selSet.size) { e.preventDefault(); deleteSelected(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'n') { e.preventDefault(); newDrawing(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 's') { e.preventDefault(); saveCurrent(); }
+  if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 'v') setMode('select');
+  if (!e.metaKey && !e.ctrlKey && e.key.toLowerCase() === 's') setMode('scissor');
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'o') { e.preventDefault(); openFile(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'c') { e.preventDefault(); copySelection(); }
+  if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === 'v') { e.preventDefault(); pasteClip(); }
+});
+
+// 缩放
+function zoomAt(k2, ax, ay) {
+  k2 = Math.min(2.4, Math.max(0.2, k2));
+  view.x = ax - (ax - view.x) * (k2 / view.k);
+  view.y = ay - (ay - view.y) * (k2 / view.k);
+  view.k = k2;
+  applyView();
+}
+function zoomCenter(f) {
+  const st = $('#stage').getBoundingClientRect();
+  zoomAt(view.k * f, st.width / 2, st.height / 2);
+}
+$('#z-in').addEventListener('click', () => zoomCenter(1.2));
+$('#z-out').addEventListener('click', () => zoomCenter(1 / 1.2));
+$('#z-fit').addEventListener('click', () => fitView());
+$('#z-range').addEventListener('input', e => {
+  const k2 = +e.target.value / 100;
+  const st = $('#stage').getBoundingClientRect();
+  zoomAt(k2, st.width / 2, st.height / 2);
+});
+
+$('#stage').addEventListener('wheel', e => {
+  e.preventDefault();
+  const st = $('#stage').getBoundingClientRect();
+  const mx = e.clientX - st.left, my = e.clientY - st.top;
+  const step = Math.sign(e.deltaY) * settings.wheel;      // 灵敏度来自左侧「设置」
+  zoomAt(view.k * Math.exp(-step), mx, my);
+}, { passive: false });
+
+// ───────────────────────── 检视器 ─────────────────────────
+function renderInspector() {
+  const box = $('#insp');
+  box.innerHTML = '<h4>检视器</h4>';
+  const n = spec.nodes.find(x => x.id === sel);
+  if (!n) { box.appendChild(el('div', 'empty', '点一个节点看它的语义、形状、以及它产生的 op。')); return; }
+  const c = PC.LIBMAP[n.type];
+  box.appendChild(el('div', 'kv', `<span>${c.name}</span><b>${n.type}</b>`));
+  box.appendChild(el('div', 'hint', c.note || ''));
+
+  const addRow = (label, input) => {
+    const r = el('div', 'row'); r.appendChild(el('label', null, label)); r.appendChild(input); box.appendChild(r);
+  };
+  // 状态组件：名字和形状都由用户定
+  if (c.state) {
+    const nm = el('input'); nm.type = 'text'; nm.value = PC.tname(n); nm.style.width = '116px';
+    nm.addEventListener('change', () => {
+      const want = nm.value.trim();
+      if (!want) { nm.value = PC.tname(n); return; }
+      if (usedNames().has(want) && want !== PC.tname(n)) { toast('这个名字已经被占了'); nm.value = PC.tname(n); return; }
+      n.name = want; resetRun();
+    });
+    addRow('名称', nm);
+
+    const shp = PC.stateShape(spec, n);
+    const box = el('div', 'shp');
+    const rIn = el('input'); rIn.type = 'number'; rIn.min = 1; rIn.step = 1; rIn.value = shp.r;
+    const cIn = el('input'); cIn.type = 'number'; cIn.min = 1; cIn.step = 1; cIn.value = shp.c;
+    const apply = () => {
+      const r = Math.max(1, +rIn.value | 0), cc = Math.max(1, +cIn.value | 0);
+      n.shape = { r, c: cc };
+      resetRun();
+    };
+    rIn.addEventListener('change', apply); cIn.addEventListener('change', apply);
+    box.appendChild(rIn); box.appendChild(el('span', null, '×')); box.appendChild(cIn);
+    addRow('形状', box);
+    box.appendChild(el('span', 'dim2', ''));
+    box.parentElement.appendChild(el('div', 'hint', '算子连上来之后会按这个形状校验；改形状会重建整个计划。'));
+  }
+  if (n.type === 'EM') {
+    const inp = el('input'); inp.type = 'number'; inp.value = n.l || 1; inp.min = 1;
+    inp.addEventListener('change', () => { n.l = Math.max(1, +inp.value | 0); resetRun(); });
+    addRow('层号（只影响张量命名）', inp);
+  }
+  if (c.params && c.params.includes('s')) {
+    const inp = el('input'); inp.type = 'number'; inp.step = 0.01; inp.value = n.s == null ? 0.1 : n.s;
+    inp.addEventListener('change', () => { n.s = +inp.value; rebuild(); });
+    addRow('系数 s', inp);
+  }
+  if (c.params && c.params.includes('c')) {
+    const inp = el('input'); inp.type = 'number'; inp.step = 0.1; inp.value = n.c == null ? 1 : n.c;
+    inp.addEventListener('change', () => { n.c = +inp.value; rebuild(); });
+    addRow('裁剪 c', inp);
+  }
+
+  // 它产生的 op
+  if (rt && rt.pr) {
+    box.appendChild(el('div', 'grp', '它产生的 op（按相位）'));
+    const t = rt.pr.tensors.find(t => t.name === (PC.tname ? PC.tname(n) : ''));
+    if (t) box.appendChild(el('div', 'kv', `<span>张量 ${t.name}</span><b>${PC.fmtShape(t.shape)} · off ${t.off} B</b>`));
+  }
+  const del = el('button', 'btn danger', '删除节点');
+  del.style.marginTop = '8px';
+  del.addEventListener('click', () => {
+    spec.nodes = spec.nodes.filter(x => x.id !== n.id);
+    spec.edges = spec.edges.filter(e => e.from[0] !== n.id && e.to[0] !== n.id);
+    setSelection([], null); resetRun();
+  });
+  box.appendChild(del);
+}
+
+// ───────────────────────── 指标 / 状态 ─────────────────────────
+function updateStat() {
+  const m = rt && rt.pr && rt.pr.total ? PC.metrics(rt.pr) : null;
+  $('#b-ops').textContent = m ? `ops ${m.ops}` : 'ops —';
+  $('#b-arena').textContent = m ? `arena ${m.total} B` : 'arena —';
+  const errs = (rt && rt.errors) || [];
+  const b = $('#b-check');
+  b.className = 'badge ' + (errs.length ? 'bad' : 'ok');
+  b.textContent = errs.length ? `校验 ${errs.length} 个问题` : '校验 通过';
+  b.title = errs.map(e => e.msg).join('\n');
+}
+
+// ───────────────────────── 图表 ─────────────────────────
+function drawChart() {
+  const cv = $('#chart'), dpr = window.devicePixelRatio || 1;
+  const w = cv.clientWidth, h = cv.clientHeight;
+  cv.width = w * dpr; cv.height = h * dpr;
+  const g = cv.getContext('2d');
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const pts = hist.slice(-240);
+  if (pts.length < 2) { g.fillStyle = '#4b5563'; g.font = '11px sans-serif'; g.fillText('运行后出现曲线', 10, h / 2); return; }
+  const lo = Math.log10(Math.min(...pts) + 1e-12), hi = Math.log10(Math.max(...pts) + 1e-12);
+  const X = i => 6 + i * (w - 12) / (pts.length - 1);
+  const Y = v => h - 8 - (Math.log10(v + 1e-12) - lo) / Math.max(1e-6, hi - lo) * (h - 18);
+  g.strokeStyle = '#1d2634'; g.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) { const y = 8 + i * (h - 18) / 3; g.beginPath(); g.moveTo(6, y); g.lineTo(w - 6, y); g.stroke(); }
+  g.beginPath();
+  pts.forEach((v, i) => (i ? g.lineTo(X(i), Y(v)) : g.moveTo(X(i), Y(v))));
+  g.strokeStyle = '#4da3ff'; g.lineWidth = 1.6; g.stroke();
+  g.lineTo(X(pts.length - 1), h - 8); g.lineTo(X(0), h - 8); g.closePath();
+  g.fillStyle = 'rgba(77,163,255,.10)'; g.fill();
+  g.fillStyle = '#8b98a9'; g.font = '10px monospace';
+  g.fillText(Math.pow(10, hi).toExponential(1), 8, 14);
+  g.fillText(Math.pow(10, lo).toExponential(1), 8, h - 4);
+}
+
+// ───────────────────────── 取张量 ─────────────────────────
+function tensorByName(name) { return rt && rt.pr ? rt.pr.tensors.find(t => t.name === name) : null; }
+
+// ───────────────────────── 运行 ─────────────────────────
+function resetRun() {
+  rt = PC.lower(spec);
+  if (rt.errors.length) { rebuild(); return; }
+  PC.initProgram(rt.pr, spec);
+  const xi = spec.nodes.find(n => n.type === 'x');
+  data = makeDataset(xi ? PC.stateShape(spec, xi).c : 64, 5, 11);
+  it = 0; hist = []; lastF = 0; lastE0 = 0; sampleIdx = 0;
+  {
+    const q = nm => { const t = tensorByName(nm); if (!t) return -1; const v = rt.pr.ptr(t); let s = 0; for (let i = 0; i < t.shape.n; i++) s += rt.pr.buf[v + i] ** 2; return Math.sqrt(s); };
+    if (location.hash.includes('dbg')) console.log('DBG-INIT M1=' + q('M1').toFixed(6) + ' T1=' + q('T1').toFixed(6) + ' x=' + q('x').toFixed(6) + ' nTens=' + rt.pr.tensors.length);
+  }
+  stepOnce(0);              // 先跑一步，画面里就有数
+  if (location.hash.includes('dbg')) {
+    const q = n => { const t = tensorByName(n); if (!t) return -1; const v = rt.pr.ptr(t); let s = 0; for (let i = 0; i < t.shape.n; i++) s += rt.pr.buf[v + i] ** 2; return Math.sqrt(s); };
+    console.log('DBG wTop=' + spec.wTop + ' M1=' + q('M1').toFixed(4) + ' T1=' + q('T1').toFixed(4) + ' B1=' + q('B1').toFixed(4) + ' nops=' + rt.pr.ops.length);
+  }
+  rebuild();
+  paintRun();
+}
+
+function feedInput() {
+  const t = tensorByName('x');
+  if (!t || !data) return;
+  const s = data[sampleIdx % data.length];
+  const p = rt.pr.ptr(t);
+  for (let i = 0; i < Math.min(s.length, t.shape.n); i++) rt.pr.buf[p + i] = s[i];
+}
+
+function stepOnce(dt) {
+  if (!rt || rt.errors.length || !rt.pr.planned) return;
+  const nI = Math.max(1, +spec.nInfer || 10);
+  if (it % nI === 0) feedInput();
+  PC.runPhase(rt.pr, (it % nI) === (nI - 1) ? 2 : 1);
+  it++;
+  const fixed = $('#p-fixed').checked;   // 固定样本：看着 F 单调下降；关掉则每段换一个随机样本
+  if (it % nI === 0 && !fixed) sampleIdx = (sampleIdx + 1) % (data ? data.length : 1);
+  const fe = PC.freeEnergy(rt.pr, spec);
+  lastF = fe.F;
+  const e0 = fe.perLayer.find(p => p.name === 'E0');
+  lastE0 = e0 ? e0.e : 0;
+  hist.push(Math.max(1e-9, lastF));
+}
+
+function tick() {
+  if (!running) return;
+  const n = Math.max(1, Math.min(200, +$('#speed').value || 1));
+  for (let i = 0; i < n; i++) stepOnce();
+  paintRun();
+  requestAnimationFrame(tick);
+}
+
+let painting = false;
+function paintRun() {
+  $('#k-it').textContent = it;
+  const fmt = v => (v === 0 ? '0' : (Math.abs(v) < 1e-3 ? v.toExponential(2) : v.toFixed(5)));
+  $('#k-F').textContent = fmt(lastF);
+  $('#k-e0').textContent = fmt(lastE0);
+  drawChart();
+  updateNodeValues();
+}
+function updateNodeValues() {
+  if (!rt || !rt.pr || !rt.pr.buf) return;
+  for (const n of spec.nodes) {
+    const c = PC.LIBMAP[n.type];
+    if (c.state) {
+      const t = tensorByName(PC.tname(n));
+      const d = document.querySelector(`.node[data-id="${n.id}"] .ft`);
+      if (!d || !t) continue;
+      const v = rt.pr.buf.subarray(rt.pr.ptr(t), rt.pr.ptr(t) + t.shape.n);
+      let s = 0; for (const q of v) s += q * q;
+      d.textContent = `${PC.fmtShape(t.shape)} · ‖·‖² ${s.toFixed(4)}`;
+    } else if (n.type === 'MON') {
+      paintMonitor(n);
+    }
+  }
+}
+
+// 监视组件：把张量画成方阵（列数 = √n 向上取整，尽量是正方形）
+function paintMonitor(n) {
+  const host = document.querySelector(`.mon[data-mon="${n.id}"]`);
+  if (!host) return;
+  const t = rt && rt.views && rt.views[n.id];
+  if (!t) { host.innerHTML = '<span class="empty">没接张量</span>'; return; }
+  const v = rt.pr.buf.subarray(rt.pr.ptr(t), rt.pr.ptr(t) + t.shape.n);
+  const cols = Math.ceil(Math.sqrt(v.length));
+  const rows = Math.ceil(v.length / cols);
+  const cell = Math.max(2, Math.min(settings.cell || 4, Math.floor(monitorSize() / cols)));
+  let mx = 0; for (const x of v) mx = Math.max(mx, Math.abs(x));
+  if (mx < 1e-9) mx = 1;
+  let cells = host.children;
+  if (cells.length !== v.length) {
+    host.innerHTML = '';
+    for (let i = 0; i < v.length; i++) { const d = document.createElement('i'); d.style.width = d.style.height = cell + 'px'; d.style.borderRadius = '1px'; host.appendChild(d); }
+    cells = host.children;
+  }
+  host.style.gridTemplateColumns = `repeat(${cols},${cell}px)`;
+  for (let i = 0; i < v.length; i++) {
+    const x = v[i], a = Math.min(1, Math.abs(x) / mx);
+    cells[i].style.background = x >= 0 ? `rgba(123,216,143,${0.05 + a * 0.95})` : `rgba(239,124,116,${0.05 + a * 0.95})`;
+    cells[i].title = x.toFixed(4);
+  }
+}
+
+$('#btn-run').addEventListener('click', () => {
+  running = !running;
+  $('#btn-run').textContent = running ? '⏸ 暂停' : '▶ 运行';
+  if (running) tick();
+});
+$('#btn-step').addEventListener('click', () => { stepOnce(); paintRun(); });
+$('#btn-reset').addEventListener('click', resetRun);
+
+// 超参绑定
+const bind = (id, key, cast) => {
+  const e = $(id);
+  // nInfer 只影响循环节拍，其余超参都会改到 lower 出来的 op，需要重跑
+  e.addEventListener('change', () => { spec[key] = cast(e.value); if (key === 'nInfer') rebuild(); else resetRun(); });
+  return e;
+};
+bind('#p-lrmu', 'lrMu', Number); bind('#p-lrt', 'lrT', Number); bind('#p-lrb', 'lrB', Number);
+bind('#p-ninfer', 'nInfer', v => Math.max(1, +v | 0)); bind('#p-seed', 'seed', Number); bind('#p-wtop', 'wTop', Number);
+$('#p-fixed').addEventListener('change', e => { spec.fixed = e.target.checked; });
+
+// 预设（示例图纸只在「文件 → 示例图纸」里）
+function newDrawing() {
+  spec = {
+    v: 1, dims: [64], nodes: [], edges: [],
+    lrMu: 0.1, lrT: 0.01, lrB: 0.01, nInfer: 20, seed: 42, wTop: 0.02, fixed: true,
+  };
+  curFile = null; curName = null;
+  document.title = 'pc-studio · 预测编码图编辑器';
+  syncHyper();
+  setSelection([], null);
+  resetRun();
+  toast('新图纸：从左边组件库拖东西进来');
+}
+
+function loadPreset(i) {
+  spec = PRESETS[i].make();
+  curFile = null; curName = null;
+  document.title = 'pc-studio · 预测编码图编辑器';
+  syncHyper();
+  setSelection([], null);
+  resetRun();
+  fitView();
+}
+
+function syncHyper() {
+  $('#p-lrmu').value = spec.lrMu; $('#p-lrt').value = spec.lrT; $('#p-lrb').value = spec.lrB;
+  $('#p-ninfer').value = spec.nInfer; $('#p-seed').value = spec.seed; $('#p-wtop').value = spec.wTop;
+  $('#p-fixed').checked = spec.fixed !== false;
+}
+function fitView() {
+  if (!spec.nodes.length) return;
+  const minX = Math.min(...spec.nodes.map(n => n.pos.x)) - 40;
+  const maxX = Math.max(...spec.nodes.map(n => n.pos.x + 160)) + 40;
+  const minY = Math.min(...spec.nodes.map(n => n.pos.y)) - 30;
+  const maxY = Math.max(...spec.nodes.map(n => n.pos.y + 120)) + 30;
+  const st = $('#stage').getBoundingClientRect();
+  const k = Math.min(1.4, Math.min(st.width / (maxX - minX), st.height / (maxY - minY)));
+  view.k = Math.max(0.35, k);
+  view.x = (st.width - (maxX - minX) * view.k) / 2 - minX * view.k;
+  view.y = (st.height - (maxY - minY) * view.k) / 2 - minY * view.k;
+  applyView();
+}
+
+// ───────────────────────── 文件：直接读写本地文件 ─────────────────────────
+let curFile = null;            // FileSystemFileHandle（保存过一次就有）
+let curName = null;
+const canFS = typeof window.showSaveFilePicker === 'function';
+const JSON_TYPES = [{ description: '图纸 JSON', accept: { 'application/json': ['.json'] } }];
+const CPP_TYPES = [{ description: 'C++ 头文件', accept: { 'text/x-c++hdr': ['.hpp', '.cpp'] } }];
+
+function specText() { return JSON.stringify({ v: 1, name: curName || null, spec }, null, 2); }
+
+async function writeHandle(h, text) {
+  const w = await h.createWritable();
+  await w.write(text);
+  await w.close();
+}
+
+async function saveCurrent() {
+  if (curFile) {
+    try { await writeHandle(curFile, specText()); toast('已保存 → ' + curFile.name); return true; }
+    catch (e) { toast('保存失败：' + e.message); return false; }
+  }
+  return saveAs();
+}
+
+async function saveAs() {
+  if (!canFS) { downloadText((curName || 'drawing') + '.json', specText()); return true; }
+  try {
+    const h = await window.showSaveFilePicker({ suggestedName: (curName || 'drawing') + '.json', types: JSON_TYPES });
+    await writeHandle(h, specText());
+    curFile = h; curName = h.name.replace(/\.json$/i, '');
+    document.title = 'pc-studio · ' + h.name;
+    toast('已保存 → ' + h.name);
+    return true;
+  } catch (e) {
+    if (e.name !== 'AbortError') toast('保存失败：' + e.message);
+    return false;
+  }
+}
+
+function downloadText(name, text) {
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([text], { type: 'text/plain' }));
+  a.download = name;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  toast('已下载 ' + name);
+}
+
+async function openFile() {
+  if (!canFS) { $('#pk-file').click(); return; }
+  try {
+    const [h] = await window.showOpenFilePicker({ types: JSON_TYPES, multiple: false });
+    applyLoaded(await (await h.getFile()).text(), h);
+  } catch (e) { if (e.name !== 'AbortError') toast('打开失败：' + e.message); }
+}
+
+function applyLoaded(txt, handle) {
+  try {
+    const j = JSON.parse(txt);
+    const sp = j.spec || j;
+    if (!sp || !Array.isArray(sp.nodes)) throw new Error('不是图纸文件');
+    loadSpec(sp, handle ? handle.name.replace(/\.json$/i, '') : null);
+    if (handle) { curFile = handle; document.title = 'pc-studio · ' + handle.name; }
+    toast('已加载 ' + (curName || '图纸'));
+  } catch (e) { toast('加载失败：' + e.message); }
+}
+
+// 导出窗口里的「保存…」
+async function saveTextAs(kind, text) {
+  const name = kind === 'cpp' ? 'model.hpp' : (curName || 'drawing') + '.json';
+  if (!canFS) { downloadText(name, text); return; }
+  try {
+    const h = await window.showSaveFilePicker({ suggestedName: name, types: kind === 'cpp' ? CPP_TYPES : JSON_TYPES });
+    await writeHandle(h, text);
+    toast('已保存 → ' + h.name);
+  } catch (e) { if (e.name !== 'AbortError') toast('保存失败：' + e.message); }
+}
+
+function afterLoad() {
+  it = 0; hist = []; lastF = 0; lastE0 = 0; rt = null;
+  setSelection([], null);
+  syncHyper();
+  resetRun(); fitView();
+}
+
+function loadSpec(sp, name) {
+  spec = JSON.parse(JSON.stringify(sp));
+  if (!spec.dims) spec.dims = [64];
+  if (name !== undefined) {
+    curName = name;
+    document.title = 'pc-studio' + (name ? ' · ' + name : ' · 预测编码图编辑器');
+  }
+  afterLoad();
+}
+
+// ───────────────────────── 顶栏菜单 ─────────────────────────
+function closeMenu() { $('#filemenu').classList.remove('on'); }
+$('#btn-file').addEventListener('click', e => { e.stopPropagation(); $('#filemenu').classList.toggle('on'); });
+document.addEventListener('click', e => { if (!e.target.closest('.menu-btn')) closeMenu(); });
+$('#filemenu').addEventListener('click', e => {
+  const mi = e.target.closest('.mi');
+  if (!mi) return;
+  closeMenu();
+  const a = mi.dataset.act;
+  if (a === 'new') newDrawing();
+  else if (a === 'save') saveCurrent();
+  else if (a === 'saveas') saveAs();
+  else if (a === 'open') openFile();
+  else if (a === 'ex0') loadPreset(0);
+  else if (a === 'ex1') loadPreset(1);
+  else if (a === 'ex2') loadPreset(2);
+  else if (a === 'json') $('#btn-json').click();
+  else if (a === 'cpp') $('#btn-cpp').click();
+});
+
+// 没有 File System Access API 时的兜底：<input type=file>
+$('#pk-file').addEventListener('change', e => {
+  const f = e.target.files && e.target.files[0];
+  if (!f) return;
+  const fr = new FileReader();
+  fr.onload = () => applyLoaded(fr.result, null);
+  fr.readAsText(f);
+  e.target.value = '';
+});
+
+// ───────────────────────── 导出弹窗 ─────────────────────────
+let lastExport = null;   // { kind, text } —— 弹窗里「保存…」用
+function showModal(title, text, kind) {
+  $('#m-title').textContent = title;
+  $('#m-body').textContent = text;
+  lastExport = { kind: kind || 'json', text };
+  $('#modal').classList.add('on');
+}
+$('#m-save').addEventListener('click', () => { if (lastExport) saveTextAs(lastExport.kind, lastExport.text); });
+$('#m-close').addEventListener('click', () => $('#modal').classList.remove('on'));
+$('#modal').addEventListener('click', e => { if (e.target.id === 'modal') $('#modal').classList.remove('on'); });
+$('#m-copy').addEventListener('click', () => {
+  navigator.clipboard.writeText($('#m-body').textContent).then(() => toast('已复制'), () => toast('复制失败'));
+});
+$('#btn-layout').addEventListener('click', () => { autoLayout(); rebuild(); fitView(); });
+// 工具菜单
+$('#btn-tool').addEventListener('click', e => {
+  e.stopPropagation();
+  $('#filemenu').classList.remove('on');
+  $('#toolmenu').classList.toggle('on');
+});
+$('#toolmenu').addEventListener('click', e => {
+  const mi = e.target.closest('.mi');
+  if (mi) setMode(mi.dataset.mode);
+});
+document.addEventListener('click', e => { if (!e.target.closest('#btn-tool')) closeToolMenu(); });
+
+// 左 / 右栏开关（只影响显示，不动图纸）
+$('#btn-left').addEventListener('click', () => {
+  const off = $('#main').classList.toggle('hide-left');
+  $('#btn-left').classList.toggle('off', off);
+  setTimeout(drawChart, 0);
+});
+$('#btn-right').addEventListener('click', () => {
+  const off = $('#main').classList.toggle('hide-right');
+  $('#btn-right').classList.toggle('off', off);
+  setTimeout(() => { drawChart(); fitView(); }, 0);
+});
+$('#btn-json').addEventListener('click', () => showModal('导出 JSON（可保存 / 再导入）', JSON.stringify(spec, null, 2), 'json'));
+$('#btn-cpp').addEventListener('click', () => {
+  const r = PC.emitCpp(spec, 'model');
+  showModal('导出 C++（engine/pc.hpp）', r.text, 'cpp');
+});
+$('#btn-help').addEventListener('click', () => showModal('怎么用', HELP, 'txt'));
+function toast(t) {
+  const d = $('#toast'); d.textContent = t; d.classList.add('on');
+  setTimeout(() => d.classList.remove('on'), 1400);
+}
+
+const HELP = `操作
+· 左键单击组件 = 选中；Shift/⌘ + 单击 = 加选；左键拖空白 = 框选（可框多个）
+· 右键（或中键）拖动 = 平移视图；滚轮 = 以光标为中心缩放
+· 右键组件 = 删除 / 复制 / 粘贴；⌘C / ⌘V 也行；画布空白右键 = 粘贴到这里
+· Delete 删除选中；点连线可以删掉这条线；右下角滑块 / ⤢ = 缩放 / 适应画布
+· 顶栏右侧「左栏 / 右栏」可以收起两侧面板（不影响图纸内容）
+
+图
+1. 组件库在左边：点「组件」展开/收起；点一下组件 = 放到画布中央，也可以直接拖进来。
+2. 连线：从组件右侧的圆点拖到另一个组件左侧的圆点。
+3. 状态组件（x / 后验 μ / 权重 θ / 偏置 β / 误差 ε / 中间量）的名字和形状都自己定：
+   选中后在右边「检视器」里改「名称」「形状 r × c」。连上算子之后，算子会按你的形状
+   自动校验，形状对不上会在组件上直接标红报错。
+4. 状态组件的左边是「写」、右边是「读」。op 的输出连到状态组件的左边 = 原地写回那块内存
+   （例如 AXPY 的输出连到 M[1] 的左边，就是 M[1] += η·Δμ）。
+5. 「监视」组件：把一个张量画成方阵热力图（列数取 √n 向上取整），接在哪个状态的
+   「读」口上就画它。跟运行无关，只做显示。
+6. EM 是「集成」组件：接 μ（1×n 行向量）和 θ（Du×n），f/ε 是下层预测与本层误差，
+   μ′/θ′/β′ 是写回的新值，接回状态组件的左边。
+
+文件
+7. 文件 → 保存（⌘S）直接写回你打开/上次另存的那个本地 .json；没有文件时弹保存框。
+   另存为… = 选个新位置；加载图纸（⌘O）= 选本地 .json 打开。
+8. 导出的 JSON / C++ 弹窗里也有「保存…」，可以直接存成 .json / .hpp。
+9. 运行：▶ 开始，F 曲线是自由能，重建误差 ‖ε₀‖² 越小说明重建越好。
+10. 导出 C++ 把当前图变成一段 build() 代码，用的是 engine/pc.hpp；种子一致时和界面里
+    跑出来的数一样（examples/pc_basic.cpp 会核对）。
+`;
+
+// ───────────────────────── 启动 ─────────────────────────
+buildPalette();
+applySettings();
+syncHyper();
+resetRun();
+fitView();
+window.addEventListener('load', () => {
+  setTimeout(fitView, 60);
+  if (location.hash.includes('menu')) setTimeout(() => $('#filemenu').classList.add('on'), 200);
+  if (location.hash.includes('tools')) setTimeout(() => $('#toolmenu').classList.add('on'), 200);
+  if (location.hash.includes('scissor')) setTimeout(() => setMode('scissor'), 220);
+  if (location.hash.includes('deep')) loadPreset(1);
+  else if (location.hash.includes('single')) loadPreset(2);
+  const h = location.hash.match(/run=(\d+)/);
+  if (h) {
+    const n = +h[1];
+    for (let i = 0; i < n; i++) {
+      stepOnce();
+      if (location.hash.includes('dbg') && i % 100 === 0) {
+        const q = nm => { const t = tensorByName(nm); const v = rt.pr.ptr(t); let s = 0; for (let k = 0; k < t.shape.n; k++) s += rt.pr.buf[v + k] ** 2; return s; };
+        console.log('DBG-TRACE ' + i + ' M1=' + q('M1').toFixed(4) + ' T1=' + q('T1').toFixed(2) + ' B1=' + q('B1').toFixed(4) + ' E0=' + q('E0').toFixed(4) + ' x=' + q('x').toFixed(2));
+      }
+    }
+    paintRun();
+    if (location.hash.includes('dbg')) {
+      const q = nm => { const t = tensorByName(nm); if (!t) return -1; const v = rt.pr.ptr(t); let s = 0; for (let i = 0; i < t.shape.n; i++) s += rt.pr.buf[v + i] ** 2; return Math.sqrt(s); };
+      console.log('DBGOPS ' + rt.pr.ops.map(o => [o.k, o.a && o.a.name, o.b && o.b.name, o.d.name, o.phase, o.scalar || 0].join(':')).join(' | '));
+      console.log('DBG-END it=' + it + ' M1=' + q('M1').toFixed(4) + ' T1=' + q('T1').toFixed(4) + ' B1=' + q('B1').toFixed(4) + ' P0=' + q('P0').toFixed(4) + ' wTop=' + spec.wTop + ' fixed=' + $('#p-fixed').checked);
+    }
+  }
+});
+window.addEventListener('resize', () => { drawChart(); });
+
+// 演示态（#demo）：加一个监视组件、开设置浮窗、跑若干步，给截图用
+if (location.hash.includes('demo')) setTimeout(() => {
+  const xi = spec.nodes.find(n => n.type === 'x');
+  const e0 = spec.nodes.find(n => n.type === 'E' && (n.l || 0) === 0) || spec.nodes.find(n => n.type === 'E');
+  const mon = addNode('MON', { x: 1000, y: 300 });
+  if (e0) connect(e0.id, 'out', mon.id, 'v');
+  const mon2 = addNode('MON', { x: 1000, y: 500 });
+  const p0 = spec.nodes.find(n => n.type === 'V' && PC.tname(n) === 'P0');
+  if (p0) connect(p0.id, 'out', mon2.id, 'v');
+  resetRun();
+  fitView();
+  if (location.hash.includes('set')) document.querySelector('#ls-head').click();
+  const n = +(location.hash.match(/run=(\d+)/) || [0, 250])[1];
+  for (let i = 0; i < n; i++) stepOnce();
+  paintRun();
+  if (location.hash.includes('ctx')) {
+    const nd = document.querySelector(`.node[data-id="${mon.id}"]`);
+    selectNode(mon.id);
+    const bb = nd.getBoundingClientRect();
+    showCtx(bb.left + 30, bb.top + 12, true);
+  }
+}, 300);
+
+// 交互自检（仅 #selftest 时跑，给无头浏览器用）
+if (location.hash.includes('selftest')) setTimeout(() => {
+  const log = (...a) => console.log('TEST ' + a.join(' '));
+  const at = (x, y) => document.elementFromPoint(x, y);
+  const fire = (t, x, y, o) => (at(x, y) || document.body).dispatchEvent(new MouseEvent(t, Object.assign({ bubbles: true, clientX: x, clientY: y, button: 0 }, o)));
+  try {
+    // 1) 框选（从空白处左键拖到节点上）
+    fire('mousedown', 620, 760);
+    log('drag-kind', drag && drag.kind);
+    fire('mousemove', 980, 500);
+    log('marquee-box', document.querySelector('#marquee').style.cssText.replace(/\s+/g, ' '));
+    if (location.hash.includes('hold')) { document.querySelector('#b-check').textContent = 'hold'; return; }
+    fire('mouseup', 980, 500);
+    log('marquee-selected', selSet.size);
+    document.querySelector('#b-check').textContent = 'sel=' + selSet.size;
+
+    // 2) 右键拖动平移
+    const vx = view.x;
+    fire('mousedown', 700, 300, { button: 2 });
+    fire('mousemove', 760, 340);
+    fire('mouseup', 760, 340, { button: 2 });
+    log('pan-dx', Math.round(view.x - vx), 'drag-cleared', drag === null);
+
+    // 3) 缩放条
+    const r = document.querySelector('#z-range');
+    r.value = 150; r.dispatchEvent(new Event('input', { bubbles: true }));
+    log('zoom-k', view.k.toFixed(2), 'label', document.querySelector('#z-val').textContent);
+
+    // 4) 滚轮（灵敏度取自设置）
+    const k0 = view.k;
+    document.querySelector('#stage').dispatchEvent(new WheelEvent('wheel', { deltaY: -100, clientX: 700, clientY: 400, bubbles: true, cancelable: true }));
+    log('wheel-dir', view.k > k0 ? 'in' : 'out', 'k', view.k.toFixed(3), 'sens', settings.wheel);
+
+    // 5) 左右栏开关
+    document.querySelector('#btn-left').click();
+    log('left-hidden', document.querySelector('#main').classList.contains('hide-left'));
+    document.querySelector('#btn-left').click();
+    document.querySelector('#btn-right').click();
+    log('right-hidden', document.querySelector('#main').classList.contains('hide-right'), 'ops-badge-kept', document.querySelector('#b-ops').textContent.trim());
+    document.querySelector('#btn-right').click();
+
+    // 6) 设置浮窗 + 折叠组件库
+    document.querySelector('#ls-head').click();
+    log('setpop-open', document.querySelector('#setpop').classList.contains('on'));
+    const w0 = settings.wheel;
+    const wr = document.querySelector('#set-body input[type=range]');
+    wr.value = 24; wr.dispatchEvent(new Event('input', { bubbles: true }));
+    log('wheel-sens', w0, '->', settings.wheel);
+    document.querySelector('#set-close').click();
+    document.querySelector('#lc-head').click();
+    log('palette-collapsed', !document.querySelector('#lc-body').classList.contains('open'));
+    document.querySelector('#lc-head').click();
+
+    // 7) 监视组件：拖一个上去，接到 E0，出方阵
+    const mon = addNode('MON', { x: 980, y: 640 });
+    connect('E0', 'out', mon.id, 'v');
+    log('mon-cells', document.querySelectorAll(`.mon[data-mon="${mon.id}"] i`).length, 'tensor', (rt.views[mon.id] || {}).name);
+
+    // 8) 改形状 → 校验报错
+    const m1 = spec.nodes.find(n => n.type === 'M' && (n.l || 0) === 1);
+    const c0 = PC.stateShape(spec, m1).c;
+    m1.shape = { r: 1, c: c0 + 5 };
+    resetRun();
+    log('shape-error', (rt.errors[0] || {}).msg || '无');
+
+    // 9) 右键菜单 → 复制 → 粘贴
+    const msgs = [];
+    const oldToast = toast;
+    toast = t => { msgs.push(t); oldToast(t); };
+    selectNode(mon.id);
+    const b1 = document.querySelector(`.node[data-id="${mon.id}"]`);
+    const bb = b1.getBoundingClientRect();
+    b1.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: bb.left + 20, clientY: bb.top + 10 }));
+    log('ctx-items', [...document.querySelectorAll('#ctxmenu .ci')].map(d => d.textContent.trim()).join('|'));
+    document.querySelectorAll('#ctxmenu .ci')[1].click();
+    log('copied', clip ? clip.nodes.length : 0);
+    const nBefore = spec.nodes.length;
+    pasteClip();
+    log('pasted', nBefore, '->', spec.nodes.length, 'sel', selSet.size);
+    toast = oldToast;
+
+    // 10) 示例图纸从菜单切
+    document.querySelector('#btn-file').click();
+    document.querySelector('#filemenu .mi[data-act="ex1"]').click();
+    log('example3-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', spec.nodes.length);
+    document.querySelector('#btn-file').click();
+    document.querySelector('#filemenu .mi[data-act="ex2"]').click();
+    log('example1-ops', document.querySelector('#b-ops').textContent.trim(), 'nodes', spec.nodes.length);
+
+    log('canFS', canFS, 'save-as-test', typeof saveTextAs);
+
+    // 12) 新建图纸
+    newDrawing();
+    log('new-nodes', spec.nodes.length, 'ops', document.querySelector('#b-ops').textContent.trim());
+    loadPreset(0);
+
+    // 13) 右键拖动不弹菜单；右键单击才弹
+    clip = { nodes: [spec.nodes[0]], edges: [] };
+    fire('mousedown', 1250, 860, { button: 2 });
+    log('pan-start', drag && drag.kind);
+    fire('mousemove', 1300, 890);
+    fire('mouseup', 1300, 890, { button: 2 });
+    log('ctx-after-rightdrag', document.querySelector('#ctxmenu').classList.contains('on'));
+    fire('mousedown', 1250, 860, { button: 2 });
+    fire('mouseup', 1250, 860, { button: 2 });
+    log('ctx-after-rightclick', document.querySelector('#ctxmenu').classList.contains('on'));
+    hideCtx();
+
+    // 14) 剪刀：横着划一条线剪断连线
+    setMode('scissor');
+    log('mode', mode);
+    const paths = [...document.querySelectorAll('#wires path.hit')];
+    const pathEl = paths[paths.length - 1];
+    const mid = pathEl.getPointAtLength(pathEl.getTotalLength() * 0.5);
+    const st2 = document.querySelector('#stage').getBoundingClientRect();
+    const cx = mid.x * view.k + view.x + st2.left, cy = mid.y * view.k + view.y + st2.top;
+    const nEdges = spec.edges.length;
+    const wires = document.querySelector('#wires');
+    wires.dispatchEvent(new MouseEvent('mousedown', { bubbles: true, clientX: cx - 26, clientY: cy, button: 0 }));
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx, clientY: cy }));
+    window.dispatchEvent(new MouseEvent('mousemove', { bubbles: true, clientX: cx + 26, clientY: cy }));
+    window.dispatchEvent(new MouseEvent('mouseup', { bubbles: true, clientX: cx + 26, clientY: cy, button: 0 }));
+    log('scissor-cut', nEdges, '->', spec.edges.length);
+    setMode('select');
+    log('mode-back', mode);
+
+    // 11) 多选 + Delete
+    setSelection(spec.nodes.slice(0, 2).map(n => n.id));
+    const n0 = spec.nodes.length;
+    deleteSelected();
+    log('delete', n0, '->', spec.nodes.length);
+  } catch (e) { console.log('TEST ERROR ' + e.message + ' @ ' + (e.stack || '').split('\n')[1]); }
+}, 250);
+})();
+</script>
+</body>
+</html>
